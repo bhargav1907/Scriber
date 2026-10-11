@@ -71,36 +71,54 @@ def broadcast_from_thread(message: dict):
 # Recording Toggle & Processing Pipeline
 # ---------------------------------------------------------------------------
 
+async def start_recording():
+    """Start listening and recording audio from the microphone."""
+    if state.is_processing or state.is_recording:
+        return
+    state.is_recording = True
+    last_level_ts = [0.0]
+
+    def level_cb(level: float):
+        now = time.time()
+        if now - last_level_ts[0] > 0.066:  # ~15 FPS throttle
+            last_level_ts[0] = now
+            broadcast_from_thread({"type": "audio_level", "level": round(level, 3)})
+
+    state.recorder.level_callback = level_cb
+    state.recorder.start()
+    await broadcast({"type": "state", "state": "listening"})
+    print("[Scriber] 🎤 Recording started")
+
+
+async def stop_recording():
+    """Stop listening and kick off transcription + cleanup pipeline."""
+    if state.is_processing or not state.is_recording:
+        return
+    state.is_recording = False
+    state.is_processing = True
+    await broadcast({"type": "state", "state": "processing"})
+    print("[Scriber] ⏳ Processing …")
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _process_pipeline)
+
+
 async def handle_toggle():
-    """Toggle recording on/off. When stopping, kick off the processing pipeline."""
-    if state.is_processing:
-        return  # Ignore presses while we're transcribing
-
-    if not state.is_recording:
-        # ── Start recording ────────────────────────────────────────────
-        state.is_recording = True
-        last_level_ts = [0.0]
-
-        def level_cb(level: float):
-            now = time.time()
-            if now - last_level_ts[0] > 0.066:  # ~15 FPS throttle
-                last_level_ts[0] = now
-                broadcast_from_thread({"type": "audio_level", "level": round(level, 3)})
-
-        state.recorder.level_callback = level_cb
-        state.recorder.start()
-        await broadcast({"type": "state", "state": "listening"})
-        print("[Scriber] 🎤 Recording started")
+    """Toggle recording on/off."""
+    if state.is_recording:
+        await stop_recording()
     else:
-        # ── Stop recording → process ──────────────────────────────────
-        state.is_recording = False
-        state.is_processing = True
-        await broadcast({"type": "state", "state": "processing"})
-        print("[Scriber] ⏳ Processing …")
+        await start_recording()
 
-        # Run the heavy pipeline in a thread so we don't block the event loop
-        loop = asyncio.get_running_loop()
-        loop.run_in_executor(None, _process_pipeline)
+
+async def handle_fn_action(action: str):
+    """Handle Fn key events from listener (start, stop, or toggle)."""
+    if action == "start":
+        await start_recording()
+    elif action == "stop":
+        await stop_recording()
+    else:
+        await handle_toggle()
 
 
 def _process_pipeline():
@@ -178,12 +196,12 @@ async def lifespan(app: FastAPI):
     # Start hardware Fn key listener
     fn_listener = None
     try:
-        def on_fn_toggle():
+        def on_fn_action(action: str):
             loop = state.main_loop
             if loop and loop.is_running():
-                asyncio.run_coroutine_threadsafe(handle_toggle(), loop)
+                asyncio.run_coroutine_threadsafe(handle_fn_action(action), loop)
 
-        fn_listener = FnKeyListener(on_fn_toggle)
+        fn_listener = FnKeyListener(on_fn_action)
         fn_listener.start()
     except Exception as e:
         print(f"[Scriber] Could not start Fn key listener: {e}")
