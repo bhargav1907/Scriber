@@ -1,0 +1,439 @@
+/**
+ * Scriber — Electron Main Process
+ *
+ * Responsibilities:
+ *  - Spawn the Python backend as a child process
+ *  - Connect to the backend via WebSocket
+ *  - Register global hotkey (Option+Space)
+ *  - Manage the tray icon, floating widget, and main window
+ *  - Relay state/level updates to renderers via IPC
+ */
+
+const {
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  globalShortcut,
+  nativeImage,
+  ipcMain,
+  screen,
+  shell,
+} = require('electron');
+const { spawn } = require('child_process');
+const path = require('path');
+const zlib = require('zlib');
+const WebSocket = require('ws');
+const http = require('http');
+
+// ─── Globals ─────────────────────────────────────────────────────────
+let tray = null;
+let mainWindow = null;
+let widgetWindow = null;
+let pythonProcess = null;
+let ws = null;
+let currentState = 'idle';
+let reconnectTimer = null;
+
+const BACKEND_PORT = 58932;
+const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
+const WS_URL = `ws://127.0.0.1:${BACKEND_PORT}/ws`;
+
+// ─── PNG Icon Generator ──────────────────────────────────────────────
+// Creates simple tray icons programmatically (no external files needed)
+
+function createPNGBuffer(width, height, drawFn) {
+  const pixels = Buffer.alloc(width * height * 4, 0);
+  drawFn(pixels, width, height);
+
+  // Build raw scanlines with filter byte
+  const rawBuf = Buffer.alloc(height * (1 + width * 4));
+  for (let y = 0; y < height; y++) {
+    rawBuf[y * (1 + width * 4)] = 0; // filter: None
+    for (let x = 0; x < width; x++) {
+      const src = (y * width + x) * 4;
+      const dst = y * (1 + width * 4) + 1 + x * 4;
+      rawBuf[dst] = pixels[src];
+      rawBuf[dst + 1] = pixels[src + 1];
+      rawBuf[dst + 2] = pixels[src + 2];
+      rawBuf[dst + 3] = pixels[src + 3];
+    }
+  }
+
+  const compressed = zlib.deflateSync(rawBuf);
+
+  function chunk(type, data) {
+    const typeBuf = Buffer.from(type);
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const crcInput = Buffer.concat([typeBuf, data]);
+    const crcVal = crc32(crcInput);
+    const crcBuf = Buffer.alloc(4);
+    crcBuf.writeUInt32BE(crcVal >>> 0);
+    return Buffer.concat([len, typeBuf, data, crcBuf]);
+  }
+
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; ihdr[9] = 6; // 8-bit RGBA
+  return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', compressed), chunk('IEND', Buffer.alloc(0))]);
+}
+
+function crc32(buf) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i];
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+    }
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function setPixel(buf, w, x, y, r, g, b, a = 255) {
+  if (x < 0 || x >= w || y < 0 || y >= w) return;
+  const off = (y * w + x) * 4;
+  buf[off] = r; buf[off + 1] = g; buf[off + 2] = b; buf[off + 3] = a;
+}
+
+function makeTrayIcon(state) {
+  const s = 22;
+  return createPNGBuffer(s, s, (px, w, h) => {
+    // Draw 3-bar waveform icon
+    const color = state === 'listening' ? [239, 68, 68] : [0, 0, 0]; // red when recording, black for template
+    const alpha = 255;
+    const cx = Math.floor(w / 2);
+
+    // Center bar (tallest)
+    for (let y = 4; y <= 17; y++) { setPixel(px, w, cx, y, ...color, alpha); setPixel(px, w, cx + 1, y, ...color, alpha); }
+    // Left bar
+    for (let y = 7; y <= 14; y++) { setPixel(px, w, cx - 4, y, ...color, alpha); setPixel(px, w, cx - 3, y, ...color, alpha); }
+    // Right bar
+    for (let y = 7; y <= 14; y++) { setPixel(px, w, cx + 4, y, ...color, alpha); setPixel(px, w, cx + 5, y, ...color, alpha); }
+    // Far left bar
+    for (let y = 9; y <= 12; y++) { setPixel(px, w, cx - 7, y, ...color, alpha); setPixel(px, w, cx - 6, y, ...color, alpha); }
+    // Far right bar
+    for (let y = 9; y <= 12; y++) { setPixel(px, w, cx + 7, y, ...color, alpha); setPixel(px, w, cx + 8, y, ...color, alpha); }
+  });
+}
+
+function updateTrayIcon(state) {
+  if (!tray) return;
+  const buf = makeTrayIcon(state);
+  const img = nativeImage.createFromBuffer(buf, { width: 22, height: 22 });
+  if (state !== 'listening') img.setTemplateImage(true);
+  tray.setImage(img);
+}
+
+// ─── Window Creation ─────────────────────────────────────────────────
+
+function createWidgetWindow() {
+  const display = screen.getPrimaryDisplay();
+  const { width: screenW } = display.workAreaSize;
+
+  widgetWindow = new BrowserWindow({
+    width: 340,
+    height: 52,
+    x: Math.round(screenW / 2 - 170),
+    y: 12,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    hasShadow: false,
+    focusable: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  widgetWindow.loadFile(path.join(__dirname, 'src', 'widget.html'));
+  widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // Keep it above everything
+  widgetWindow.setAlwaysOnTop(true, 'floating', 1);
+}
+
+function createMainWindow() {
+  mainWindow = new BrowserWindow({
+    width: 900,
+    height: 680,
+    minWidth: 640,
+    minHeight: 480,
+    show: false,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 16 },
+    backgroundColor: '#0f0f1a',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+
+  mainWindow.on('close', (e) => {
+    if (!app.isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
+  });
+}
+
+// ─── Tray ────────────────────────────────────────────────────────────
+
+function createTray() {
+  const buf = makeTrayIcon('idle');
+  const img = nativeImage.createFromBuffer(buf, { width: 22, height: 22 });
+  img.setTemplateImage(true);
+  tray = new Tray(img);
+
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Scriber', enabled: false },
+    { type: 'separator' },
+    { label: 'Toggle Recording  (F5)', click: () => sendToggle() },
+    { label: 'Open Scriber', click: () => { mainWindow.show(); mainWindow.focus(); } },
+    { type: 'separator' },
+    { label: 'Quit Scriber', click: () => { app.isQuitting = true; app.quit(); } },
+  ]);
+
+  tray.setToolTip('Scriber — Voice to Text');
+  tray.setContextMenu(contextMenu);
+  tray.on('click', () => { mainWindow.show(); mainWindow.focus(); });
+}
+
+// ─── Python Backend ──────────────────────────────────────────────────
+
+function spawnPythonBackend() {
+  const venvPython = path.join(__dirname, 'backend', 'venv', 'bin', 'python3');
+  const mainPy = path.join(__dirname, 'backend', 'main.py');
+
+  pythonProcess = spawn(venvPython, [mainPy], {
+    cwd: path.join(__dirname, 'backend'),
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env },
+  });
+
+  pythonProcess.stdout.on('data', (d) => process.stdout.write(`[py] ${d}`));
+  pythonProcess.stderr.on('data', (d) => process.stderr.write(`[py] ${d}`));
+  pythonProcess.on('exit', (code) => {
+    console.log(`[Scriber] Python backend exited with code ${code}`);
+    if (!app.isQuitting) {
+      // Auto-restart after a brief delay
+      setTimeout(spawnPythonBackend, 2000);
+    }
+  });
+}
+
+// ─── WebSocket Connection ────────────────────────────────────────────
+
+function connectWebSocket() {
+  if (ws) {
+    try { ws.close(); } catch {}
+  }
+
+  ws = new WebSocket(WS_URL);
+
+  ws.on('open', () => {
+    console.log('[Scriber] WebSocket connected to backend');
+    if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+  });
+
+  ws.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      handleBackendMessage(msg);
+    } catch {}
+  });
+
+  ws.on('close', () => {
+    console.log('[Scriber] WebSocket disconnected, retrying in 2s…');
+    scheduleReconnect();
+  });
+
+  ws.on('error', () => {
+    scheduleReconnect();
+  });
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setInterval(() => {
+    if (!ws || ws.readyState === WebSocket.CLOSED) {
+      connectWebSocket();
+    }
+  }, 2000);
+}
+
+function sendWS(data) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
+
+function sendToggle() {
+  sendWS({ type: 'toggle_recording' });
+}
+
+// ─── Handle Messages from Backend ────────────────────────────────────
+
+function handleBackendMessage(msg) {
+  switch (msg.type) {
+    case 'init':
+    case 'state':
+      currentState = msg.state;
+      updateTrayIcon(msg.state);
+
+      // Show/hide widget
+      if (msg.state === 'listening' || msg.state === 'processing') {
+        if (widgetWindow && !widgetWindow.isVisible()) widgetWindow.showInactive();
+      } else if (msg.state === 'idle') {
+        if (widgetWindow && widgetWindow.isVisible()) {
+          setTimeout(() => { try { widgetWindow.hide(); } catch {} }, 300);
+        }
+      } else if (msg.state === 'done') {
+        // Widget hides after the done animation (handled by idle state later)
+      }
+
+      // Relay to renderers
+      sendToAllRenderers('state-change', msg);
+      break;
+
+    case 'audio_level':
+      sendToAllRenderers('audio-level', msg);
+      break;
+
+    case 'duration':
+      sendToAllRenderers('duration', msg);
+      break;
+
+    case 'config':
+      sendToAllRenderers('config-change', msg);
+      break;
+
+    default:
+      break;
+  }
+}
+
+function sendToAllRenderers(channel, data) {
+  [mainWindow, widgetWindow].forEach((win) => {
+    if (win && !win.isDestroyed()) {
+      try { win.webContents.send(channel, data); } catch {}
+    }
+  });
+}
+
+// ─── IPC Handlers (Renderer → Main) ─────────────────────────────────
+
+function setupIPC() {
+  ipcMain.on('toggle-recording', () => sendToggle());
+  ipcMain.on('request-duration', () => sendWS({ type: 'get_duration' }));
+
+  ipcMain.on('show-main-window', () => {
+    if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
+  });
+
+  // REST-backed actions (history, config)
+  ipcMain.on('fetch-history', async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/history`);
+      const data = await res.json();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('history-update', data);
+      }
+    } catch {}
+  });
+
+  ipcMain.on('delete-entry', async (_e, id) => {
+    try {
+      await fetch(`${BACKEND_URL}/api/history/${id}`, { method: 'DELETE' });
+      ipcMain.emit('fetch-history');
+    } catch {}
+  });
+
+  ipcMain.on('clear-history', async () => {
+    try {
+      await fetch(`${BACKEND_URL}/api/history`, { method: 'DELETE' });
+      ipcMain.emit('fetch-history');
+    } catch {}
+  });
+
+  ipcMain.on('update-config', async (_e, cfg) => {
+    try {
+      await fetch(`${BACKEND_URL}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg),
+      });
+    } catch {}
+  });
+
+  ipcMain.on('request-health', async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/health`);
+      const data = await res.json();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('health-update', data);
+      }
+    } catch {}
+  });
+}
+
+// ─── App Lifecycle ───────────────────────────────────────────────────
+
+app.whenReady().then(() => {
+  // Hide dock icon — we're a menu-bar app
+  app.dock?.hide();
+
+  createTray();
+  createWidgetWindow();
+  createMainWindow();
+  setupIPC();
+
+  // Register global hotkey: F5 (function key — easy to press, no conflicts)
+  globalShortcut.register('F5', () => {
+    sendToggle();
+  });
+
+  // Spawn Python backend
+  spawnPythonBackend();
+
+  // Connect to backend WebSocket after a short delay (let Python start)
+  setTimeout(connectWebSocket, 3000);
+  // Start polling for connection if first attempt fails
+  scheduleReconnect();
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (pythonProcess) {
+    pythonProcess.kill('SIGTERM');
+    pythonProcess = null;
+  }
+  if (ws) {
+    try { ws.close(); } catch {}
+  }
+});
+
+app.on('before-quit', () => {
+  app.isQuitting = true;
+});
+
+app.on('window-all-closed', (e) => {
+  // Don't quit on window close — keep running in tray
+  e.preventDefault?.();
+});
+
+app.on('activate', () => {
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});

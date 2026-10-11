@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scriber Widget</title>
+  <link rel="stylesheet" href="widget.css">
+</head>
+<body>
+  <div class="widget" id="widget">
+    <!-- Status Indicator -->
+    <div class="status-indicator" id="statusIndicator">
+      <div class="status-dot" id="statusDot"></div>
+    </div>
+
+    <!-- Status Text -->
+    <span class="status-text" id="statusText">Listening…</span>
+
+    <!-- Timer -->
+    <span class="timer" id="timer">0:00</span>
+
+    <!-- Audio Level Meter -->
+    <div class="audio-meter" id="audioMeter">
+      <div class="audio-bar" id="bar0"></div>
+      <div class="audio-bar" id="bar1"></div>
+      <div class="audio-bar" id="bar2"></div>
+      <div class="audio-bar" id="bar3"></div>
+      <div class="audio-bar" id="bar4"></div>
+    </div>
+  </div>
+
+  <script src="widget.js"></script>
+</body>
+</html>

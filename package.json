@@ -1,0 +1,16 @@
+{
+  "name": "scriber",
+  "version": "1.0.0",
+  "description": "Local voice-to-text for Mac — like Kivi & Wispr Flow, but private",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
