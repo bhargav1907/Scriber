@@ -196,12 +196,12 @@ async def lifespan(app: FastAPI):
     # Start hardware Fn key listener
     fn_listener = None
     try:
-        def on_fn_action(action: str):
+        def on_fn_toggle():
             loop = state.main_loop
             if loop and loop.is_running():
-                asyncio.run_coroutine_threadsafe(handle_fn_action(action), loop)
+                asyncio.run_coroutine_threadsafe(handle_toggle(), loop)
 
-        fn_listener = FnKeyListener(on_fn_action)
+        fn_listener = FnKeyListener(on_fn_toggle)
         fn_listener.start()
     except Exception as e:
         print(f"[Scriber] Could not start Fn key listener: {e}")

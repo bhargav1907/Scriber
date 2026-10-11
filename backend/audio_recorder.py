@@ -23,26 +23,49 @@ class AudioRecorder:
 
     def start(self) -> None:
         """Start recording from the microphone."""
+        if self.recording:
+            return
+
+        if self.stream:
+            try:
+                self.stream.stop()
+                self.stream.close()
+            except Exception:
+                pass
+            self.stream = None
+
         self.audio_chunks = []
         self.recording = True
         self.start_time = time.time()
-        self.stream = sd.InputStream(
-            samplerate=self.sample_rate,
-            channels=self.channels,
-            dtype="float32",
-            callback=self._audio_callback,
-            blocksize=1024,
-        )
-        self.stream.start()
+
+        try:
+            self.stream = sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=self.channels,
+                dtype="float32",
+                callback=self._audio_callback,
+                blocksize=1024,
+            )
+            self.stream.start()
+        except Exception as e:
+            print(f"[Scriber] Failed to open microphone stream: {e}")
+            self.recording = False
+            self.stream = None
 
     def stop(self) -> tuple[str | None, float]:
         """Stop recording. Returns (filepath, duration_seconds)."""
+        if not self.recording and not self.stream:
+            return None, 0.0
+
         self.recording = False
         duration = time.time() - self.start_time if self.start_time else 0
 
         if self.stream:
-            self.stream.stop()
-            self.stream.close()
+            try:
+                self.stream.stop()
+                self.stream.close()
+            except Exception:
+                pass
             self.stream = None
 
         filepath = self._save_audio()
