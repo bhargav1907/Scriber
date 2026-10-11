@@ -77,7 +77,7 @@ function updateStatusBadge(state, extra = {}) {
       break;
     default:
       statusBadge.innerHTML = '<span class="status-badge-dot"></span>Ready';
-      statusInfo.innerHTML = 'Press <kbd>F5</kbd> to start';
+      statusInfo.innerHTML = 'Press <kbd>Fn</kbd> or <kbd>⌥</kbd> <kbd>Space</kbd> to start';
   }
 }
 

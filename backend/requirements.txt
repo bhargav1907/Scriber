@@ -6,3 +6,5 @@ fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 pyperclip>=1.9.0
 httpx>=0.28.0
+pyobjc-framework-Quartz>=12.0
+pyobjc-framework-Cocoa>=12.0

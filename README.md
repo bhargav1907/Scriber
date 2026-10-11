@@ -17,9 +17,9 @@ Everything runs on your Mac. No cloud, no subscription, no data leaves your mach
 
 ## How It Works
 
-1. **Press `F5`** → Scriber starts listening (floating widget appears with 🔴 pulsing dot)
+1. **Press `Fn`** (or `Option + Space`) → Scriber starts listening (floating widget appears with 🔴 pulsing dot)
 2. **Speak naturally** as long as you want
-3. **Press `F5` again** → Scriber transcribes + cleans up your speech
+3. **Press `Fn` again** (or `Option + Space`) → Scriber transcribes + cleans up your speech
 4. **Polished text** is pasted into whatever app is focused (~1 second)
 
 ## Features

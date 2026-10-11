@@ -197,7 +197,7 @@ function createTray() {
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Scriber', enabled: false },
     { type: 'separator' },
-    { label: 'Toggle Recording  (F5)', click: () => sendToggle() },
+    { label: 'Toggle Recording  (Fn / ⌥ Space)', click: () => sendToggle() },
     { label: 'Open Scriber', click: () => { mainWindow.show(); mainWindow.focus(); } },
     { type: 'separator' },
     { label: 'Quit Scriber', click: () => { app.isQuitting = true; app.quit(); } },
@@ -397,8 +397,9 @@ app.whenReady().then(() => {
   createMainWindow();
   setupIPC();
 
-  // Register global hotkey: F5 (function key — easy to press, no conflicts)
-  globalShortcut.register('F5', () => {
+  // Register global hotkey: Option+Space (⌥ Space — standard dictation hotkey, no conflicts)
+  // Note: Hardware Fn key is also monitored directly by the Python backend via Quartz!
+  globalShortcut.register('Alt+Space', () => {
     sendToggle();
   });
 

@@ -20,6 +20,7 @@ from audio_recorder import AudioRecorder
 from transcriber import Transcriber
 from llm_cleaner import LLMCleaner
 from clipboard import paste_text
+from fn_listener import FnKeyListener
 
 
 # ---------------------------------------------------------------------------
@@ -174,9 +175,24 @@ async def lifespan(app: FastAPI):
     # Pre-load Whisper model in a background thread
     threading.Thread(target=state.transcriber.load_model, daemon=True).start()
 
+    # Start hardware Fn key listener
+    fn_listener = None
+    try:
+        def on_fn_toggle():
+            loop = state.main_loop
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(handle_toggle(), loop)
+
+        fn_listener = FnKeyListener(on_fn_toggle)
+        fn_listener.start()
+    except Exception as e:
+        print(f"[Scriber] Could not start Fn key listener: {e}")
+
     print("[Scriber] Backend server starting on http://127.0.0.1:58932")
     yield
     # ── Shutdown ───────────────────────────────────────────────────────
+    if fn_listener:
+        fn_listener.stop()
     print("[Scriber] Backend server shutting down")
 
 
