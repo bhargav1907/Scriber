@@ -1,6 +1,6 @@
 """
 Scriber — Microphone Audio Recorder
-Records audio from the selected (or default) input device using sounddevice.
+Records audio from the selected (or dynamically resolved system default) input device.
 Saves recordings as 16 kHz mono WAV files for Whisper.
 """
 
@@ -26,15 +26,23 @@ class AudioRecorder:
     def set_device(self, device: int | str | None) -> None:
         """Update selected input device."""
         self.device = device
-        print(f"[Scriber] Audio input device set to: {device}")
+        print(f"[Scriber] Audio input device set to: {device if device is not None else 'System Default'}")
 
     @staticmethod
-    def get_input_devices() -> list[dict]:
-        """Return list of available audio input devices."""
+    def get_input_devices() -> dict:
+        """Return dict with available devices and currently active system default device info."""
         devices = []
+        default_name = "Unknown"
+        default_idx = None
+        try:
+            default_info = sd.query_devices(kind="input")
+            default_name = default_info.get("name", "Unknown")
+            default_idx = default_info.get("index", None)
+        except Exception as e:
+            print(f"[Scriber] Could not query default input device: {e}")
+
         try:
             raw_devices = sd.query_devices()
-            default_in = sd.default.device[0]
             for idx, dev in enumerate(raw_devices):
                 if dev.get("max_input_channels", 0) > 0:
                     devices.append({
@@ -42,11 +50,16 @@ class AudioRecorder:
                         "name": dev["name"],
                         "channels": dev["max_input_channels"],
                         "default_samplerate": int(dev.get("default_samplerate", 16000)),
-                        "is_default": (idx == default_in),
+                        "is_default": (idx == default_idx),
                     })
         except Exception as e:
             print(f"[Scriber] Error querying input devices: {e}")
-        return devices
+
+        return {
+            "devices": devices,
+            "default_name": default_name,
+            "default_id": default_idx,
+        }
 
     def start(self) -> None:
         """Start recording from the microphone."""
@@ -66,23 +79,42 @@ class AudioRecorder:
         self.start_time = time.time()
         self.active_sample_rate = self.sample_rate
 
+        # Dynamically resolve target device
+        target_device = self.device
+        device_label = "System Default"
+        dev_sr = None
+
+        if target_device is None:
+            # Query the currently active macOS system default input device in real-time
+            try:
+                def_info = sd.query_devices(kind="input")
+                target_device = def_info.get("index", None)
+                device_label = f"System Default ({def_info.get('name', 'Unknown')})"
+                dev_sr = int(def_info.get("default_samplerate", 16000))
+            except Exception as e:
+                print(f"[Scriber] Warning: could not query real-time default input: {e}")
+                target_device = None
+        else:
+            try:
+                info = sd.query_devices(target_device, kind="input")
+                device_label = info.get("name", str(target_device))
+                dev_sr = int(info.get("default_samplerate", 16000))
+            except Exception:
+                pass
+
+        print(f"[Scriber] 🎙️ Opening microphone stream on: '{device_label}' (device_id={target_device})")
+
         # Attempt to open stream at 16000 Hz. If device rejects it, fallback to device default rate
         opened = False
         candidates = [self.sample_rate]
-        if self.device is not None:
-            try:
-                info = sd.query_devices(self.device, kind="input")
-                dev_sr = int(info.get("default_samplerate", 48000))
-                if dev_sr not in candidates:
-                    candidates.append(dev_sr)
-            except Exception:
-                pass
+        if dev_sr and dev_sr not in candidates:
+            candidates.append(dev_sr)
         candidates.extend([48000, 44100])
 
         for sr in candidates:
             try:
                 self.stream = sd.InputStream(
-                    device=self.device,
+                    device=target_device,
                     samplerate=sr,
                     channels=self.channels,
                     dtype="float32",
@@ -93,12 +125,12 @@ class AudioRecorder:
                 self.active_sample_rate = sr
                 opened = True
                 break
-            except Exception as e:
+            except Exception:
                 self.stream = None
                 continue
 
         if not opened:
-            print(f"[Scriber] ❌ Failed to open microphone stream on device {self.device}")
+            print(f"[Scriber] ❌ Failed to open microphone stream on device '{device_label}'")
             self.recording = False
 
     def stop(self) -> tuple[str | None, float]:

@@ -202,21 +202,26 @@ function showToast(message) {
 
 // ─── Settings ─────────────────────────────────────────────────────
 
-function renderAudioDevices(devices, selectedId = null) {
-  if (!devices || !devices.length) return;
+function renderAudioDevices(data, selectedId = null) {
+  if (!data) return;
+  const devices = Array.isArray(data) ? data : (data.devices || []);
+  const defaultName = (!Array.isArray(data) && data.default_name && data.default_name !== 'Unknown') ? data.default_name : '';
+
   const currentVal = settingInputDevice.value;
   settingInputDevice.innerHTML = '';
 
   const optDefault = document.createElement('option');
   optDefault.value = 'default';
-  optDefault.textContent = 'System Default';
+  optDefault.textContent = defaultName 
+    ? `System Default (${defaultName})` 
+    : 'System Default';
   settingInputDevice.appendChild(optDefault);
 
   devices.forEach((dev) => {
     if (dev.id === null) return;
     const opt = document.createElement('option');
     opt.value = String(dev.id);
-    opt.textContent = `${dev.name}${dev.is_default ? ' (Default)' : ''}`;
+    opt.textContent = dev.name;
     settingInputDevice.appendChild(opt);
   });
 
