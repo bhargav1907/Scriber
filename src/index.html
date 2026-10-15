@@ -73,7 +73,16 @@
       <div class="settings-panel">
 
         <div class="settings-group">
-          <h3 class="settings-group-title">Transcription</h3>
+          <h3 class="settings-group-title">Audio & Transcription</h3>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Microphone</span>
+              <span class="setting-desc">Select audio input device</span>
+            </div>
+            <select class="setting-select" id="settingInputDevice">
+              <option value="default">System Default</option>
+            </select>
+          </div>
           <div class="setting-row">
             <div class="setting-label">
               <span>Whisper Model</span>
@@ -81,10 +90,10 @@
             </div>
             <select class="setting-select" id="settingWhisperModel">
               <option value="tiny">Tiny (~75 MB)</option>
-              <option value="base" selected>Base (~150 MB)</option>
+              <option value="base">Base (~150 MB)</option>
               <option value="small">Small (~500 MB)</option>
               <option value="medium">Medium (~1.5 GB)</option>
-              <option value="large-v3-turbo">Large v3 Turbo (~1 GB)</option>
+              <option value="large-v3-turbo">Large v3 Turbo (~1 GB - Recommended)</option>
               <option value="large-v3">Large v3 (~3 GB)</option>
             </select>
           </div>

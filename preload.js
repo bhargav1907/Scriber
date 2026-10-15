@@ -13,11 +13,13 @@ contextBridge.exposeInMainWorld('scriber', {
   onDuration: (cb) => ipcRenderer.on('duration', (_e, data) => cb(data)),
   onHealthUpdate: (cb) => ipcRenderer.on('health-update', (_e, data) => cb(data)),
   onHistoryUpdate: (cb) => ipcRenderer.on('history-update', (_e, data) => cb(data)),
+  onAudioDevicesUpdate: (cb) => ipcRenderer.on('audio-devices-update', (_e, data) => cb(data)),
 
   // Actions: renderer → main
   toggleRecording: () => ipcRenderer.send('toggle-recording'),
   requestDuration: () => ipcRenderer.send('request-duration'),
   fetchHistory: () => ipcRenderer.send('fetch-history'),
+  fetchAudioDevices: () => ipcRenderer.send('fetch-audio-devices'),
   deleteEntry: (id) => ipcRenderer.send('delete-entry', id),
   clearHistory: () => ipcRenderer.send('clear-history'),
   updateConfig: (cfg) => ipcRenderer.send('update-config', cfg),

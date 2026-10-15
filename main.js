@@ -303,6 +303,9 @@ function handleBackendMessage(msg) {
 
       // Relay to renderers
       sendToAllRenderers('state-change', msg);
+      if (msg.audio_devices) {
+        sendToAllRenderers('audio-devices-update', msg.audio_devices);
+      }
       break;
 
     case 'audio_level':
@@ -347,6 +350,16 @@ function setupIPC() {
       const data = await res.json();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('history-update', data);
+      }
+    } catch {}
+  });
+
+  ipcMain.on('fetch-audio-devices', async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/audio-devices`);
+      const data = await res.json();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('audio-devices-update', data);
       }
     } catch {}
   });

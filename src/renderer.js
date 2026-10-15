@@ -17,6 +17,7 @@ const viewHistory    = document.getElementById('viewHistory');
 const viewSettings   = document.getElementById('viewSettings');
 
 // Settings controls
+const settingInputDevice  = document.getElementById('settingInputDevice');
 const settingWhisperModel = document.getElementById('settingWhisperModel');
 const settingLLMCleanup   = document.getElementById('settingLLMCleanup');
 const settingAutoPaste    = document.getElementById('settingAutoPaste');
@@ -201,6 +202,31 @@ function showToast(message) {
 
 // ─── Settings ─────────────────────────────────────────────────────
 
+function renderAudioDevices(devices, selectedId = null) {
+  if (!devices || !devices.length) return;
+  const currentVal = settingInputDevice.value;
+  settingInputDevice.innerHTML = '';
+
+  const optDefault = document.createElement('option');
+  optDefault.value = 'default';
+  optDefault.textContent = 'System Default';
+  settingInputDevice.appendChild(optDefault);
+
+  devices.forEach((dev) => {
+    if (dev.id === null) return;
+    const opt = document.createElement('option');
+    opt.value = String(dev.id);
+    opt.textContent = `${dev.name}${dev.is_default ? ' (Default)' : ''}`;
+    settingInputDevice.appendChild(opt);
+  });
+
+  if (selectedId !== null && selectedId !== undefined) {
+    settingInputDevice.value = String(selectedId);
+  } else if (currentVal) {
+    settingInputDevice.value = currentVal;
+  }
+}
+
 function applyConfig(config) {
   if (!config) return;
   settingWhisperModel.value = config.whisper_model || 'base';
@@ -208,12 +234,21 @@ function applyConfig(config) {
   settingAutoPaste.checked = config.auto_paste !== false;
   settingLLMModel.value = config.llm_model || 'llama3.2:3b';
   settingOllamaHost.value = config.ollama_host || 'http://localhost:11434';
+  if (config.input_device !== undefined) {
+    settingInputDevice.value = config.input_device === null ? 'default' : String(config.input_device);
+  }
 }
 
 function sendConfigUpdate(key, value) {
   window.scriber.updateConfig({ [key]: value });
 }
 
+settingInputDevice.addEventListener('change', () => {
+  const val = settingInputDevice.value;
+  const deviceId = val === 'default' ? null : parseInt(val, 10);
+  sendConfigUpdate('input_device', deviceId);
+  showToast('Microphone updated');
+});
 settingWhisperModel.addEventListener('change', () => sendConfigUpdate('whisper_model', settingWhisperModel.value));
 settingLLMCleanup.addEventListener('change', () => sendConfigUpdate('llm_cleanup_enabled', settingLLMCleanup.checked));
 settingAutoPaste.addEventListener('change', () => sendConfigUpdate('auto_paste', settingAutoPaste.checked));
@@ -233,8 +268,9 @@ window.scriber.onStateChange((data) => {
   updateStatusBadge(data.state, data);
 
   // Apply config on init
-  if (data.type === 'init' && data.config) {
-    applyConfig(data.config);
+  if (data.type === 'init') {
+    if (data.audio_devices) renderAudioDevices(data.audio_devices);
+    if (data.config) applyConfig(data.config);
   }
 });
 
@@ -246,17 +282,25 @@ window.scriber.onHistoryUpdate((data) => {
   renderHistory(data);
 });
 
+window.scriber.onAudioDevicesUpdate((devices) => {
+  renderAudioDevices(devices);
+});
+
 window.scriber.onHealthUpdate((data) => {
   healthWhisper.className = `health-dot ${data.whisper_ready ? 'ok' : 'loading'}`;
   healthOllama.className = `health-dot ${data.ollama_connected ? 'ok' : 'error'}`;
+  if (data.audio_devices) {
+    renderAudioDevices(data.audio_devices);
+  }
 });
 
 // ─── Init ─────────────────────────────────────────────────────────
 
-// Fetch history and health on load
+// Fetch history, devices, and health on load
 window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     window.scriber.fetchHistory();
+    window.scriber.fetchAudioDevices();
     window.scriber.requestHealth();
   }, 1000);
 

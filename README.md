@@ -62,11 +62,12 @@ Everything runs on your Mac. No cloud, no subscription, no data leaves your mach
 
 Open the main window (click tray icon) → click ⚙️:
 
-- **Whisper Model**: tiny / base / small / medium / large-v3-turbo / large-v3
+- **Microphone**: Select input device (System Default, MacBook Mic, Bluetooth headphones, etc.)
+- **Whisper Model**: `large-v3-turbo` (~1 GB - fast & highly accurate), `base`, `small`, `medium`, `large-v3`
 - **AI Cleanup**: toggle on/off
 - **Auto Paste**: toggle on/off
-- **LLM Model**: change the Ollama model
-- **Ollama Host**: custom Ollama endpoint
+- **LLM Model**: change the Ollama model (default: `llama3.2:3b`)
+- **Ollama Host**: custom Ollama endpoint (default: `http://localhost:11434`)
 
 ## License
 

@@ -30,7 +30,7 @@ from fn_listener import FnKeyListener
 class AppState:
     def __init__(self):
         self.config = load_config()
-        self.recorder = AudioRecorder()
+        self.recorder = AudioRecorder(device=self.config.get("input_device"))
         self.transcriber = Transcriber(self.config.get("whisper_model", "base"))
         self.cleaner = LLMCleaner(
             model=self.config.get("llm_model", "llama3.2:3b"),
@@ -239,6 +239,7 @@ async def ws_endpoint(websocket: WebSocket):
         "state": "recording" if state.is_recording else ("processing" if state.is_processing else "idle"),
         "config": state.config,
         "whisper_ready": state.transcriber.is_ready,
+        "audio_devices": AudioRecorder.get_input_devices(),
     })
 
     try:
@@ -275,7 +276,13 @@ async def health():
         "ollama_connected": ollama_ok,
         "is_recording": state.is_recording,
         "is_processing": state.is_processing,
+        "audio_devices": AudioRecorder.get_input_devices(),
     }
+
+
+@app.get("/api/audio-devices")
+async def api_audio_devices():
+    return AudioRecorder.get_input_devices()
 
 
 @app.get("/api/history")
@@ -316,6 +323,8 @@ async def api_update_config(body: dict):
         state.cleaner.model = body["llm_model"]
     if "ollama_host" in body:
         state.cleaner.host = body["ollama_host"]
+    if "input_device" in body:
+        state.recorder.set_device(body["input_device"])
 
     await broadcast({"type": "config", "config": state.config})
     return state.config

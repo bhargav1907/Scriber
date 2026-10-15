@@ -17,6 +17,7 @@ DEFAULT_CONFIG = {
     "ollama_host": "http://localhost:11434",
     "auto_paste": True,
     "sound_effects": True,
+    "input_device": None,
 }
 
 
