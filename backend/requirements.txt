@@ -2,6 +2,7 @@ faster-whisper>=1.1.0
 av<19
 sounddevice>=0.5.0
 numpy>=2.0.0
+scipy>=1.10.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 pyperclip>=1.9.0

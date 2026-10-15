@@ -178,7 +178,7 @@ class AudioRecorder:
 
         audio = np.concatenate(self.audio_chunks, axis=0).flatten()
 
-        # Resample to 16 kHz if recorded at a different rate
+        # 1. Resample to 16 kHz if recorded at a different rate
         if self.active_sample_rate != self.sample_rate and len(audio) > 0:
             target_len = int(round(len(audio) * self.sample_rate / self.active_sample_rate))
             audio = np.interp(
@@ -186,6 +186,26 @@ class AudioRecorder:
                 np.arange(len(audio)),
                 audio,
             ).astype(np.float32)
+
+        # 2. DC Offset Removal (zero-center the waveform)
+        audio = audio - np.mean(audio)
+
+        # 3. High-Pass Filter (> 80 Hz) to eliminate desk thumps, mic pops, and low-frequency rumble
+        try:
+            from scipy import signal
+            sos = signal.butter(4, 80, "hp", fs=self.sample_rate, output="sos")
+            audio = signal.sosfilt(sos, audio).astype(np.float32)
+        except Exception as e:
+            print(f"[Scriber] High-pass filter warning: {e}")
+
+        # 4. Smart Peak Gain Normalization
+        # Automatically boosts quiet microphones (like Bluetooth open-earbuds) to Whisper's ideal sweet spot
+        max_val = float(np.max(np.abs(audio)))
+        if max_val > 1e-4:
+            target_peak = 0.85  # ~ -1.4 dBFS
+            gain = min(target_peak / max_val, 12.0)  # Max +21.5 dB boost to prevent noise amplification
+            audio = audio * gain
+            print(f"[Scriber] 🎚️ Audio cleaned & normalized (peak: {max_val:.3f} → {np.max(np.abs(audio)):.3f}, gain: {gain:.2f}x)")
 
         filepath = APP_DIR / "last_recording.wav"
         filepath.parent.mkdir(parents=True, exist_ok=True)
