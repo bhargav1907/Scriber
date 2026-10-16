@@ -33,17 +33,19 @@ class LLMCleaner:
 
         prompt = CLEANUP_PROMPT.format(text=raw_text)
 
+        max_tokens = max(int(len(raw_text.split()) * 2) + 20, 50)
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=15.0) as client:
                 response = await client.post(
                     f"{self.host}/api/generate",
                     json={
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
+                        "keep_alive": "24h",
                         "options": {
                             "temperature": 0.1,
-                            "num_predict": 1000,
+                            "num_predict": max_tokens,
                         },
                     },
                 )

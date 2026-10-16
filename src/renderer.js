@@ -66,9 +66,10 @@ function updateStatusBadge(state, extra = {}) {
       break;
     case 'done':
       statusBadge.innerHTML = '<span class="status-badge-dot"></span>Done';
+      const timeStr = extra.pipeline_time ? ` (${extra.pipeline_time}s)` : '';
       statusInfo.textContent = extra.cleaned_text
-        ? `"${extra.cleaned_text.slice(0, 60)}${extra.cleaned_text.length > 60 ? '…' : ''}"`
-        : 'Text pasted!';
+        ? `"${extra.cleaned_text.slice(0, 50)}${extra.cleaned_text.length > 50 ? '…' : ''}"${timeStr}`
+        : `Text pasted!${timeStr}`;
       // Refresh history
       setTimeout(() => window.scriber.fetchHistory(), 500);
       break;

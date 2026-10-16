@@ -132,8 +132,13 @@ def _process_pipeline():
             broadcast_from_thread({"type": "state", "state": "idle"})
             return
 
+        t_pipeline_start = time.time()
+
         # 1. Transcribe
+        t_w0 = time.time()
         raw_text = state.transcriber.transcribe(audio_path)
+        t_whisper = time.time() - t_w0
+
         if not raw_text or not raw_text.strip():
             broadcast_from_thread({"type": "state", "state": "error", "message": "No speech detected"})
             time.sleep(2.0)
@@ -142,21 +147,26 @@ def _process_pipeline():
 
         # 2. LLM cleanup (optional)
         cleaned_text = raw_text
+        t_llm = 0.0
         if state.config.get("llm_cleanup_enabled", True):
+            t_l0 = time.time()
             try:
                 loop = asyncio.new_event_loop()
                 cleaned_text = loop.run_until_complete(state.cleaner.cleanup(raw_text))
                 loop.close()
             except Exception as e:
                 print(f"[Scriber] LLM cleanup error (using raw text): {e}")
+            t_llm = time.time() - t_l0
 
         # 3. Paste into the active app
         if state.config.get("auto_paste", True):
-            time.sleep(0.1)  # Brief pause so the OS can settle
+            time.sleep(0.05)  # Brief pause so the OS can settle
             paste_text(cleaned_text)
 
         # 4. Save to history
         save_transcription(raw_text, cleaned_text, duration, state.config.get("whisper_model", "base"))
+
+        t_total = time.time() - t_pipeline_start
 
         # 5. Broadcast success
         broadcast_from_thread({
@@ -165,8 +175,9 @@ def _process_pipeline():
             "raw_text": raw_text,
             "cleaned_text": cleaned_text,
             "duration": round(duration, 1),
+            "pipeline_time": round(t_total, 2),
         })
-        print(f"[Scriber] ✅ Done ({round(duration, 1)}s) → {cleaned_text[:80]}")
+        print(f"[Scriber] ⚡ Processed in {t_total:.2f}s (STT: {t_whisper:.2f}s, LLM: {t_llm:.2f}s) → \"{cleaned_text[:60]}\"")
 
         time.sleep(2.0)
         broadcast_from_thread({"type": "state", "state": "idle"})
