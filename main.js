@@ -137,7 +137,7 @@ function createWidgetWindow() {
     width: 340,
     height: 52,
     x: Math.round(screenW / 2 - 170),
-    y: 12,
+    y: 16,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -155,8 +155,34 @@ function createWidgetWindow() {
 
   widgetWindow.loadFile(path.join(__dirname, 'src', 'widget.html'));
   widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  // Keep it above everything
-  widgetWindow.setAlwaysOnTop(true, 'floating', 1);
+  widgetWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+}
+
+function showWidget() {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return;
+  try {
+    const cursor = screen.getCursorScreenPoint();
+    const activeDisplay = screen.getDisplayNearestPoint(cursor);
+    const { x: dispX, y: dispY, width: dispW } = activeDisplay.bounds;
+    const widgetW = 340;
+    const targetX = Math.round(dispX + (dispW - widgetW) / 2);
+    const targetY = dispY + 16;
+
+    widgetWindow.setPosition(targetX, targetY, false);
+    widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    widgetWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    widgetWindow.showInactive();
+    widgetWindow.moveTop();
+  } catch (err) {
+    console.error('[Scriber] Failed to show widget:', err);
+  }
+}
+
+function hideWidget() {
+  if (!widgetWindow || widgetWindow.isDestroyed()) return;
+  try {
+    widgetWindow.hide();
+  } catch {}
 }
 
 function createMainWindow() {
@@ -301,14 +327,13 @@ function handleBackendMessage(msg) {
       updateTrayIcon(msg.state);
 
       // Show/hide widget
-      if (msg.state === 'listening' || msg.state === 'processing') {
-        if (widgetWindow && !widgetWindow.isVisible()) widgetWindow.showInactive();
+      if (msg.state === 'listening' || msg.state === 'processing' || msg.state === 'done') {
+        showWidget();
       } else if (msg.state === 'idle') {
-        if (widgetWindow && widgetWindow.isVisible()) {
-          setTimeout(() => { try { widgetWindow.hide(); } catch {} }, 300);
-        }
-      } else if (msg.state === 'done') {
-        // Widget hides after the done animation (handled by idle state later)
+        setTimeout(() => hideWidget(), 400);
+      } else if (msg.state === 'error') {
+        showWidget();
+        setTimeout(() => hideWidget(), 3000);
       }
 
       // Relay to renderers

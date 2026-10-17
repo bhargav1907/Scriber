@@ -85,7 +85,22 @@ async def start_recording():
             broadcast_from_thread({"type": "audio_level", "level": round(level, 3)})
 
     state.recorder.level_callback = level_cb
-    state.recorder.start()
+    try:
+        ok = state.recorder.start()
+        if not ok:
+            state.is_recording = False
+            await broadcast({"type": "state", "state": "error", "message": "Mic stream failed"})
+            await asyncio.sleep(2.0)
+            await broadcast({"type": "state", "state": "idle"})
+            return
+    except Exception as e:
+        state.is_recording = False
+        print(f"[Scriber] ❌ Failed to start recording: {e}")
+        await broadcast({"type": "state", "state": "error", "message": str(e)})
+        await asyncio.sleep(2.0)
+        await broadcast({"type": "state", "state": "idle"})
+        return
+
     await broadcast({"type": "state", "state": "listening"})
     print("[Scriber] 🎤 Recording started")
 
@@ -220,7 +235,7 @@ async def lifespan(app: FastAPI):
     # Background task: Monitor audio hardware changes (e.g. Bluetooth headphones connected/disconnected)
     async def device_watcher():
         while True:
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(5.0)
             try:
                 if not state.is_recording and not state.is_processing:
                     has_changed, devices_data = AudioRecorder.check_for_device_changes()

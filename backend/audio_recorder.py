@@ -11,9 +11,12 @@ import sounddevice as sd
 from config import APP_DIR
 
 
+import threading
+
 class AudioRecorder:
     _is_any_recording: bool = False
     _last_devices_signature: tuple | None = None
+    _sd_lock = threading.Lock()
 
     def __init__(self, sample_rate: int = 16000, channels: int = 1, device: int | str | None = None):
         self.sample_rate = sample_rate
@@ -36,47 +39,49 @@ class AudioRecorder:
         """Force PortAudio to re-enumerate CoreAudio devices so newly connected Bluetooth/USB devices appear."""
         if cls._is_any_recording:
             return
-        try:
-            sd._terminate()
-            sd._initialize()
-        except Exception as e:
-            print(f"[Scriber] Could not refresh sounddevice: {e}")
+        with cls._sd_lock:
+            try:
+                sd._terminate()
+                sd._initialize()
+            except Exception as e:
+                print(f"[Scriber] Could not refresh sounddevice: {e}")
 
     @classmethod
-    def get_input_devices(cls, force_refresh: bool = True) -> dict:
+    def get_input_devices(cls, force_refresh: bool = False) -> dict:
         """Return dict with available devices and currently active system default device info."""
         if force_refresh and not cls._is_any_recording:
             cls.refresh_devices()
 
-        devices = []
-        default_name = "Unknown"
-        default_idx = None
-        try:
-            default_info = sd.query_devices(kind="input")
-            default_name = default_info.get("name", "Unknown")
-            default_idx = default_info.get("index", None)
-        except Exception as e:
-            print(f"[Scriber] Could not query default input device: {e}")
+        with cls._sd_lock:
+            devices = []
+            default_name = "Unknown"
+            default_idx = None
+            try:
+                default_info = sd.query_devices(kind="input")
+                default_name = default_info.get("name", "Unknown")
+                default_idx = default_info.get("index", None)
+            except Exception as e:
+                print(f"[Scriber] Could not query default input device: {e}")
 
-        try:
-            raw_devices = sd.query_devices()
-            for idx, dev in enumerate(raw_devices):
-                if dev.get("max_input_channels", 0) > 0:
-                    devices.append({
-                        "id": idx,
-                        "name": dev["name"],
-                        "channels": dev["max_input_channels"],
-                        "default_samplerate": int(dev.get("default_samplerate", 16000)),
-                        "is_default": (idx == default_idx),
-                    })
-        except Exception as e:
-            print(f"[Scriber] Error querying input devices: {e}")
+            try:
+                raw_devices = sd.query_devices()
+                for idx, dev in enumerate(raw_devices):
+                    if dev.get("max_input_channels", 0) > 0:
+                        devices.append({
+                            "id": idx,
+                            "name": dev["name"],
+                            "channels": dev["max_input_channels"],
+                            "default_samplerate": int(dev.get("default_samplerate", 16000)),
+                            "is_default": (idx == default_idx),
+                        })
+            except Exception as e:
+                print(f"[Scriber] Error querying input devices: {e}")
 
-        return {
-            "devices": devices,
-            "default_name": default_name,
-            "default_id": default_idx,
-        }
+            return {
+                "devices": devices,
+                "default_name": default_name,
+                "default_id": default_idx,
+            }
 
     @classmethod
     def check_for_device_changes(cls) -> tuple[bool, dict]:
@@ -96,90 +101,91 @@ class AudioRecorder:
 
         return False, info
 
-    def start(self) -> None:
-        """Start recording from the microphone."""
+    def start(self) -> bool:
+        """Start recording from the microphone. Returns True on success, False on failure."""
         if self.recording:
-            return
+            return True
 
-        if self.stream:
-            try:
-                self.stream.stop()
-                self.stream.close()
-            except Exception:
-                pass
-            self.stream = None
+        with self._sd_lock:
+            if self.stream:
+                try:
+                    self.stream.stop()
+                    self.stream.close()
+                except Exception:
+                    pass
+                self.stream = None
 
-        # Re-initialize sounddevice right before recording to guarantee we latch onto the active system default
-        self.refresh_devices()
+            self.audio_chunks = []
+            self.start_time = time.time()
+            self.active_sample_rate = self.sample_rate
 
-        self.audio_chunks = []
-        self.recording = True
-        AudioRecorder._is_any_recording = True
-        self.start_time = time.time()
-        self.active_sample_rate = self.sample_rate
+            # Dynamically resolve target device
+            target_device = self.device
+            device_label = "System Default"
+            dev_sr = None
 
-        # Dynamically resolve target device
-        target_device = self.device
-        device_label = "System Default"
-        dev_sr = None
-
-        if target_device is None or target_device == "default":
-            # Query the currently active macOS system default input device in real-time
-            try:
-                def_info = sd.query_devices(kind="input")
-                target_device = def_info.get("index", None)
-                device_label = f"System Default ({def_info.get('name', 'Unknown')})"
-                dev_sr = int(def_info.get("default_samplerate", 16000))
-            except Exception as e:
-                print(f"[Scriber] Warning: could not query real-time default input: {e}")
-                target_device = None
-        else:
-            try:
-                info = sd.query_devices(target_device, kind="input")
-                device_label = info.get("name", str(target_device))
-                dev_sr = int(info.get("default_samplerate", 16000))
-                target_device = info.get("index", target_device)
-            except Exception as e:
-                print(f"[Scriber] Warning: specified device '{target_device}' not found ({e}), falling back to System Default")
+            if target_device is None or target_device == "default":
+                # Query the currently active macOS system default input device in real-time
                 try:
                     def_info = sd.query_devices(kind="input")
                     target_device = def_info.get("index", None)
                     device_label = f"System Default ({def_info.get('name', 'Unknown')})"
                     dev_sr = int(def_info.get("default_samplerate", 16000))
-                except Exception:
+                except Exception as e:
+                    print(f"[Scriber] Warning: could not query real-time default input: {e}")
                     target_device = None
+            else:
+                try:
+                    info = sd.query_devices(target_device, kind="input")
+                    device_label = info.get("name", str(target_device))
+                    dev_sr = int(info.get("default_samplerate", 16000))
+                    target_device = info.get("index", target_device)
+                except Exception as e:
+                    print(f"[Scriber] Warning: specified device '{target_device}' not found ({e}), falling back to System Default")
+                    try:
+                        def_info = sd.query_devices(kind="input")
+                        target_device = def_info.get("index", None)
+                        device_label = f"System Default ({def_info.get('name', 'Unknown')})"
+                        dev_sr = int(def_info.get("default_samplerate", 16000))
+                    except Exception:
+                        target_device = None
 
-        print(f"[Scriber] 🎙️ Opening microphone stream on: '{device_label}' (device_id={target_device})")
+            print(f"[Scriber] 🎙️ Opening microphone stream on: '{device_label}' (device_id={target_device})")
 
-        # Attempt to open stream at 16000 Hz. If device rejects it, fallback to device default rate
-        opened = False
-        candidates = [self.sample_rate]
-        if dev_sr and dev_sr not in candidates:
-            candidates.append(dev_sr)
-        candidates.extend([48000, 44100])
+            # Attempt to open stream at 16000 Hz. If device rejects it, fallback to device default rate
+            opened = False
+            candidates = [self.sample_rate]
+            if dev_sr and dev_sr not in candidates:
+                candidates.append(dev_sr)
+            candidates.extend([48000, 44100])
 
-        for sr in candidates:
-            try:
-                self.stream = sd.InputStream(
-                    device=target_device,
-                    samplerate=sr,
-                    channels=self.channels,
-                    dtype="float32",
-                    callback=self._audio_callback,
-                    blocksize=1024,
-                )
-                self.stream.start()
-                self.active_sample_rate = sr
-                opened = True
-                break
-            except Exception:
-                self.stream = None
-                continue
+            for sr in candidates:
+                try:
+                    self.stream = sd.InputStream(
+                        device=target_device,
+                        samplerate=sr,
+                        channels=self.channels,
+                        dtype="float32",
+                        callback=self._audio_callback,
+                        blocksize=1024,
+                    )
+                    self.stream.start()
+                    self.active_sample_rate = sr
+                    opened = True
+                    break
+                except Exception:
+                    self.stream = None
+                    continue
 
-        if not opened:
-            print(f"[Scriber] ❌ Failed to open microphone stream on device '{device_label}'")
-            self.recording = False
-            AudioRecorder._is_any_recording = False
+            if not opened:
+                print(f"[Scriber] ❌ Failed to open microphone stream on device '{device_label}'")
+                self.recording = False
+                AudioRecorder._is_any_recording = False
+                return False
+
+            self.recording = True
+            AudioRecorder._is_any_recording = True
+            return True
 
     def stop(self) -> tuple[str | None, float]:
         """Stop recording. Returns (filepath, duration_seconds)."""
