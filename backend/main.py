@@ -198,13 +198,26 @@ def _process_pipeline():
         raw_text = state.transcriber.transcribe(audio_path)
         t_whisper = time.time() - t_w0
 
-        # Anti-hallucination guard: If raw text is just an echoing of the custom vocabulary list, discard it
+        # Anti-hallucination guard 1: If raw text is just an echoing of the custom vocabulary list, discard it
         if raw_text and custom_vocab:
             words = [w.strip().lower() for w in re.split(r'[,.\s]+', raw_text) if w.strip()]
             vocab_set = {w.strip().lower() for v in custom_vocab for w in v.split()}
             if words and all(w in vocab_set for w in words) and len(set(words)) >= len(vocab_set) * 0.7:
                 print(f"[Scriber] ⚠️ Discarded prompt hallucination: '{raw_text[:60]}'")
                 raw_text = ""
+
+        # Anti-hallucination guard 2: Whisper silence phantom outputs ("Thank you.", "Thanks for watching!", etc.)
+        if raw_text and raw_text.strip().lower() in {
+            "thank you.", "thank you", "thanks for watching.", "thanks for watching!",
+            "thank you very much.", "thank you very much", "thanks.", "thanks",
+            "you", "bye.", "bye", "goodbye.", "goodbye",
+            "please subscribe.", "subscribe", "[music]", "[applause]", "[silence]",
+            "(music)", "(applause)", "(silence)", "[blank_audio]", "thank you for watching.",
+            "thank you for watching", "so, thank you.", "so, thank you", "thank you so much.",
+            "thank you so much", "thanks for listening.", "thanks for listening!",
+        }:
+            print(f"[Scriber] ⚠️ Discarded silence hallucination: '{raw_text}'")
+            raw_text = ""
 
         if not raw_text or not raw_text.strip():
             broadcast_from_thread({"type": "state", "state": "error", "message": "No speech detected"})

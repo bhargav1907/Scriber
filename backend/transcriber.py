@@ -33,6 +33,17 @@ MLX_MODEL_MAP = {
     "tiny": "mlx-community/whisper-tiny",
 }
 
+# Known Whisper hallucinations triggered by silence, breath, or background noise
+SILENCE_HALLUCINATIONS = {
+    "thank you.", "thank you", "thanks for watching.", "thanks for watching!",
+    "thank you very much.", "thank you very much", "thanks.", "thanks",
+    "you", "bye.", "bye", "goodbye.", "goodbye",
+    "please subscribe.", "subscribe", "[music]", "[applause]", "[silence]",
+    "(music)", "(applause)", "(silence)", "[blank_audio]", "thank you for watching.",
+    "thank you for watching", "so, thank you.", "so, thank you", "thank you so much.",
+    "thank you so much", "thanks for listening.", "thanks for listening!",
+}
+
 
 class Transcriber:
     def __init__(self, model_size: str = "large-v3-turbo"):
@@ -123,6 +134,16 @@ class Transcriber:
                         frames = wf.readframes(wf.getnframes())
                         audio_np = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
+                    if audio_np.size == 0:
+                        return ""
+
+                    # Energy gate: check if audio is near-silence / ambient floor
+                    max_amp = float(np.max(np.abs(audio_np)))
+                    rms = float(np.sqrt(np.mean(audio_np ** 2)))
+                    if max_amp < 0.015 or rms < 0.003:
+                        print(f"[Scriber] 🔇 Audio signal below voice threshold (max_amp={max_amp:.4f}, rms={rms:.4f}), skipping.")
+                        return ""
+
                     res = mlx_whisper.transcribe(
                         audio_np,
                         path_or_hf_repo=repo,
@@ -133,9 +154,19 @@ class Transcriber:
                         fp16=True,
                     )
                     raw = res.get("text", "").strip()
+
+                    # Filter out silence hallucinations (e.g. "Thank you.", "Thanks for watching!")
+                    if raw.lower().strip() in SILENCE_HALLUCINATIONS:
+                        print(f"[Scriber] ⚠️ Discarded silence hallucination: '{raw}'")
+                        return ""
+
                     # Strip any repetitive hallucination loops (e.g. "word, word, word...")
-                    cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE)
-                    return cleaned.strip()
+                    cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE).strip()
+                    if cleaned.lower() in SILENCE_HALLUCINATIONS:
+                        print(f"[Scriber] ⚠️ Discarded silence hallucination: '{cleaned}'")
+                        return ""
+
+                    return cleaned
                 except Exception as e:
                     print(f"[Scriber] MLX transcription warning ({e}), falling back to CPU...")
 
@@ -156,7 +187,11 @@ class Transcriber:
                     ),
                 )
                 raw = " ".join(seg.text.strip() for seg in segments).strip()
-                cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE)
-                return cleaned.strip()
+                if raw.lower() in SILENCE_HALLUCINATIONS:
+                    return ""
+                cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE).strip()
+                if cleaned.lower() in SILENCE_HALLUCINATIONS:
+                    return ""
+                return cleaned
 
         return ""

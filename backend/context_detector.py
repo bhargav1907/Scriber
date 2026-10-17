@@ -1,92 +1,90 @@
 """
 Scriber — Active Application Context Detector
-Detects frontmost macOS application using AppKit NSWorkspace, Quartz WindowServer,
-and AppleScript fallbacks to enable smart context-aware dictation.
+Detects frontmost macOS application using bundle identifiers and WindowServer layers
+to enable smart context-aware dictation without getting stuck or fooled by helper processes.
 """
 
 import subprocess
 from AppKit import NSWorkspace
 import Quartz
 
-# Processes to ignore (Scriber's own Electron processes and system layers)
-IGNORED_APPS = {
-    "scriber", "electron", "node", "npm exec electron .",
-    "window server", "dock", "spotlight", "control center", "systemuiserver"
+# Immutable reverse-DNS Bundle Identifier mapping
+# This eliminates ambiguity where Electron apps report 'Electron' at process level
+BUNDLE_ID_MAP = {
+    # IDEs, Code Editors & Terminals
+    "com.google.antigravity-ide": ("Antigravity", "code", "💻"),
+    "com.microsoft.VSCode": ("VS Code", "code", "💻"),
+    "com.microsoft.VSCodeInsiders": ("VS Code", "code", "💻"),
+    "com.todesktop.230313mzl4w4u92": ("Cursor", "code", "💻"),
+    "com.apple.dt.Xcode": ("Xcode", "code", "💻"),
+    "com.apple.Terminal": ("Terminal", "code", "💻"),
+    "com.googlecode.iterm2": ("iTerm", "code", "💻"),
+    "dev.warp.Warp-Stable": ("Warp", "code", "💻"),
+    "com.mitchellh.ghostty": ("Ghostty", "code", "💻"),
+    "com.sublimetext.4": ("Sublime", "code", "💻"),
+    "com.jetbrains.pycharm": ("PyCharm", "code", "💻"),
+    "com.jetbrains.intellij": ("IntelliJ", "code", "💻"),
+    "com.jetbrains.WebStorm": ("WebStorm", "code", "💻"),
+    "com.jetbrains.CLion": ("CLion", "code", "💻"),
+    "dev.zed.Zed": ("Zed", "code", "💻"),
+
+    # Web Browsers
+    "com.brave.Browser": ("Brave", "browser", "🌐"),
+    "com.google.Chrome": ("Chrome", "browser", "🌐"),
+    "com.google.Chrome.canary": ("Chrome Canary", "browser", "🌐"),
+    "com.apple.Safari": ("Safari", "browser", "🌐"),
+    "company.thebrowser.Browser": ("Arc", "browser", "🌐"),
+    "org.mozilla.firefox": ("Firefox", "browser", "🌐"),
+    "com.microsoft.edgemac": ("Edge", "browser", "🌐"),
+    "com.operasoftware.Opera": ("Opera", "browser", "🌐"),
+    "com.vivaldi.Vivaldi": ("Vivaldi", "browser", "🌐"),
+    "at.studio.AsideBrowser": ("Aside", "browser", "🌐"),
+    "app.zen-browser.zen": ("Zen Browser", "browser", "🌐"),
+    "com.kagi.kagimacOS": ("Orion", "browser", "🌐"),
+
+    # Communication & Chat
+    "com.tinyspeck.slackmacgap": ("Slack", "chat", "💬"),
+    "com.hnc.Discord": ("Discord", "chat", "💬"),
+    "com.apple.MobileSMS": ("Messages", "chat", "💬"),
+    "ru.keepcoder.Telegram": ("Telegram", "chat", "💬"),
+    "net.whatsapp.WhatsApp": ("WhatsApp", "chat", "💬"),
+    "com.microsoft.teams2": ("Teams", "chat", "💬"),
+    "com.skype.skype": ("Skype", "chat", "💬"),
+
+    # Email
+    "com.apple.mail": ("Mail", "email", "✉️"),
+    "com.microsoft.Outlook": ("Outlook", "email", "✉️"),
+    "com.superhuman.electron": ("Superhuman", "email", "✉️"),
+    "com.readdle.smartemail-Mac": ("Spark", "email", "✉️"),
+
+    # Notes & Productivity
+    "com.apple.Notes": ("Notes", "notes", "📝"),
+    "notion.id": ("Notion", "notes", "📝"),
+    "md.obsidian": ("Obsidian", "notes", "📝"),
+    "com.microsoft.Word": ("Word", "notes", "📝"),
+    "com.apple.iWork.Pages": ("Pages", "notes", "📝"),
+    "com.apple.TextEdit": ("TextEdit", "notes", "📝"),
+    "com.apple.finder": ("Finder", "general", "✨"),
 }
 
-# Clean, human-readable display names for common apps
-CLEAN_NAMES = {
-    "google chrome": "Chrome",
-    "brave browser": "Brave",
-    "brave": "Brave",
-    "safari": "Safari",
-    "microsoft edge": "Edge",
-    "firefox": "Firefox",
-    "arc": "Arc",
-    "opera": "Opera",
-    "vivaldi": "Vivaldi",
-    "aside": "Aside",
-    "zen": "Zen Browser",
-    "orion": "Orion",
-    "antigravity ide": "Antigravity",
-    "antigravity": "Antigravity",
-    "visual studio code": "VS Code",
-    "code": "VS Code",
-    "cursor": "Cursor",
-    "xcode": "Xcode",
-    "iterm2": "iTerm",
-    "iterm": "iTerm",
-    "terminal": "Terminal",
-    "warp": "Warp",
-    "ghostty": "Ghostty",
-    "sublime text": "Sublime",
-    "slack": "Slack",
-    "discord": "Discord",
-    "messages": "Messages",
-    "telegram": "Telegram",
-    "whatsapp": "WhatsApp",
-    "microsoft teams": "Teams",
-    "teams": "Teams",
-    "microsoft outlook": "Outlook",
-    "outlook": "Outlook",
-    "apple mail": "Mail",
-    "mail": "Mail",
-    "superhuman": "Superhuman",
-    "spark": "Spark",
-    "apple notes": "Notes",
-    "notes": "Notes",
-    "notion": "Notion",
-    "obsidian": "Obsidian",
-    "microsoft word": "Word",
-    "word": "Word",
-    "pages": "Pages",
-    "textedit": "TextEdit",
-    "finder": "Finder",
-}
-
-# Known application name sets mapped to dictation modes
+# General keyword categories for unknown bundle IDs
 APP_CATEGORIES = {
     "browser": {
-        "google chrome", "chrome", "brave browser", "brave", "safari", "arc", 
-        "firefox", "microsoft edge", "edge", "opera", "vivaldi", "aside", "zen", 
-        "orion", "browser", "chromium"
+        "chrome", "brave", "safari", "arc", "firefox", "edge", "opera",
+        "vivaldi", "aside", "zen", "orion", "browser", "chromium"
     },
     "code": {
-        "code", "visual studio code", "cursor", "xcode", "terminal", "iterm", "iterm2", 
-        "warp", "ghostty", "alacritty", "sublime text", "pycharm", "intellij idea", 
-        "webstorm", "antigravity ide", "antigravity", "clion", "neovim", "macvim", "zed"
+        "code", "cursor", "xcode", "terminal", "iterm", "warp", "ghostty",
+        "sublime", "pycharm", "intellij", "webstorm", "antigravity", "clion", "zed"
     },
     "email": {
-        "mail", "microsoft outlook", "outlook", "superhuman", "spark", "thunderbird", 
-        "canary mail", "airmail", "boxer", "apple mail"
+        "mail", "outlook", "superhuman", "spark", "thunderbird"
     },
     "chat": {
-        "slack", "discord", "messages", "telegram", "whatsapp", "signal", "teams", 
-        "microsoft teams", "mattermost", "element", "skype", "wechat"
+        "slack", "discord", "messages", "telegram", "whatsapp", "teams", "signal", "skype"
     },
     "notes": {
-        "notes", "apple notes", "notion", "obsidian", "bear", "craft", "pages", 
-        "word", "microsoft word", "textedit", "drafts", "ulysses", "scrivener", "logseq"
+        "notes", "notion", "obsidian", "word", "pages", "textedit", "bear", "craft"
     },
 }
 
@@ -100,36 +98,37 @@ APP_ICONS = {
 }
 
 
-def _is_ignored(name: str) -> bool:
-    """Check if app name belongs to Scriber or system layers."""
-    if not name:
-        return True
-    n = name.lower().strip()
-    return any(ig in n for ig in IGNORED_APPS)
-
-
 def get_frontmost_app() -> dict:
     """
-    Get the currently active macOS application name and category using a robust
-    3-layer detection strategy (NSWorkspace → Quartz WindowServer → AppleScript).
-    Returns: {"name": str, "category": str, "icon": str}
+    Detect the active frontmost macOS application.
+    Prioritizes bundle identifier lookup, with fallbacks for unknown or custom apps.
     """
-    raw_name = None
+    bid = ""
+    raw_name = ""
 
-    # Layer 1: AppKit NSWorkspace frontmostApplication
+    # Priority 1: Real-time System Events query (returns bundle identifier of frontmost process)
     try:
-        app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        if app:
-            n = (app.localizedName() or "").strip()
-            bid = (app.bundleIdentifier() or "").strip()
-            if n and not _is_ignored(n) and bid != "com.github.Electron":
-                raw_name = n
+        cmd = 'tell application "System Events" to return (bundle identifier of first application process whose frontmost is true) & "|||" & (name of first application process whose frontmost is true)'
+        res = subprocess.run(["osascript", "-e", cmd], capture_output=True, text=True, timeout=0.4)
+        if res.returncode == 0 and res.stdout.strip():
+            parts = res.stdout.strip().split("|||")
+            bid = parts[0].strip() if len(parts) > 0 else ""
+            raw_name = parts[1].strip() if len(parts) > 1 else ""
     except Exception:
         pass
 
-    # Layer 2: Quartz WindowServer (inspect top-most Layer 0 on-screen window)
-    # Essential when Scriber's own window or menu bar was just clicked
-    if not raw_name:
+    # Priority 2: NSWorkspace fallback
+    if not bid:
+        try:
+            app = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if app:
+                bid = (app.bundleIdentifier() or "").strip()
+                raw_name = (app.localizedName() or "").strip()
+        except Exception:
+            pass
+
+    # If the front process is Scriber itself, look behind it to find the real target app
+    if bid in {"com.github.Electron", "com.scriber.app"}:
         try:
             windows = Quartz.CGWindowListCopyWindowInfo(
                 Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
@@ -138,45 +137,33 @@ def get_frontmost_app() -> dict:
             for w in windows:
                 layer = w.get("kCGWindowLayer", 0)
                 owner = (w.get("kCGWindowOwnerName", "") or "").strip()
-                if layer == 0 and owner and not _is_ignored(owner):
+                owner_l = owner.lower()
+                if layer == 0 and owner and owner_l not in {
+                    "electron", "scriber", "window server", "dock", "spotlight", "windowmanager"
+                }:
                     raw_name = owner
+                    bid = ""
                     break
         except Exception:
             pass
 
-    # Layer 3: AppleScript System Events fallback
-    if not raw_name:
-        try:
-            res = subprocess.run(
-                ["osascript", "-e", 'tell application "System Events" to get name of first application process whose frontmost is true'],
-                capture_output=True,
-                text=True,
-                timeout=0.6,
-            )
-            if res.returncode == 0:
-                candidate = res.stdout.strip()
-                if candidate and not _is_ignored(candidate):
-                    raw_name = candidate
-        except Exception:
-            pass
+    # Direct match via Bundle Identifier
+    if bid and bid in BUNDLE_ID_MAP:
+        name, cat, icon = BUNDLE_ID_MAP[bid]
+        return {"name": name, "category": cat, "icon": icon}
 
-    if not raw_name:
-        return {"name": "General", "category": "general", "icon": "✨"}
-
-    name_lower = raw_name.lower().strip()
-
-    # Determine dictation category
+    # Fallback: Keyword matching on name or bundle ID
+    combined = f"{raw_name} {bid}".lower()
     category = "general"
     for cat, app_set in APP_CATEGORIES.items():
-        if name_lower in app_set or any(kw in name_lower for kw in app_set):
+        if any(kw in combined for kw in app_set):
             category = cat
             break
 
-    # Determine clean display name for HUD badge
-    clean_name = CLEAN_NAMES.get(name_lower, raw_name)
+    display_name = raw_name if raw_name and raw_name.lower() != "electron" else "System"
 
     return {
-        "name": clean_name,
+        "name": display_name,
         "category": category,
         "icon": APP_ICONS.get(category, "✨"),
     }
