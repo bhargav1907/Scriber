@@ -6,6 +6,7 @@ Communicates with the Electron frontend via WebSocket.
 
 import asyncio
 import json
+import re
 import time
 import threading
 from contextlib import asynccontextmanager
@@ -191,12 +192,19 @@ def _process_pipeline():
 
         t_pipeline_start = time.time()
 
-        # 1. Transcribe with custom vocabulary biasing Whisper acoustic model
+        # 1. Transcribe audio acoustically (without prompt injection to prevent hallucination loops)
         t_w0 = time.time()
         custom_vocab = state.config.get("custom_vocabulary", [])
-        initial_prompt = ", ".join(custom_vocab) if custom_vocab else None
-        raw_text = state.transcriber.transcribe(audio_path, initial_prompt=initial_prompt)
+        raw_text = state.transcriber.transcribe(audio_path)
         t_whisper = time.time() - t_w0
+
+        # Anti-hallucination guard: If raw text is just an echoing of the custom vocabulary list, discard it
+        if raw_text and custom_vocab:
+            words = [w.strip().lower() for w in re.split(r'[,.\s]+', raw_text) if w.strip()]
+            vocab_set = {w.strip().lower() for v in custom_vocab for w in v.split()}
+            if words and all(w in vocab_set for w in words) and len(set(words)) >= len(vocab_set) * 0.7:
+                print(f"[Scriber] ⚠️ Discarded prompt hallucination: '{raw_text[:60]}'")
+                raw_text = ""
 
         if not raw_text or not raw_text.strip():
             broadcast_from_thread({"type": "state", "state": "error", "message": "No speech detected"})

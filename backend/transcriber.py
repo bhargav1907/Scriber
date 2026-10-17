@@ -5,6 +5,7 @@ with graceful fallback to faster-whisper (CTranslate2).
 """
 
 import os
+import re
 import wave
 import threading
 import numpy as np
@@ -104,10 +105,10 @@ class Transcriber:
         finally:
             self._loading = False
 
-    def transcribe(self, audio_path: str, initial_prompt: str | None = None) -> str:
+    def transcribe(self, audio_path: str) -> str:
         """
         Transcribe an audio file to text using Metal GPU or greedy CPU search.
-        Biases acoustic decoding with initial_prompt (e.g. custom vocabulary / names).
+        Transcribes strictly the spoken acoustic signal without prompt hallucination.
         """
         if not self.is_ready:
             self.load_model()
@@ -128,11 +129,13 @@ class Transcriber:
                         language="en",
                         temperature=0.0,
                         condition_on_previous_text=False,
-                        initial_prompt=initial_prompt,
                         word_timestamps=False,
                         fp16=True,
                     )
-                    return res.get("text", "").strip()
+                    raw = res.get("text", "").strip()
+                    # Strip any repetitive hallucination loops (e.g. "word, word, word...")
+                    cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE)
+                    return cleaned.strip()
                 except Exception as e:
                     print(f"[Scriber] MLX transcription warning ({e}), falling back to CPU...")
 
@@ -145,7 +148,6 @@ class Transcriber:
                     best_of=1,
                     temperature=0.0,
                     condition_on_previous_text=False,
-                    initial_prompt=initial_prompt,
                     without_timestamps=True,
                     vad_filter=True,
                     vad_parameters=dict(
@@ -153,6 +155,8 @@ class Transcriber:
                         speech_pad_ms=150,
                     ),
                 )
-                return " ".join(seg.text.strip() for seg in segments).strip()
+                raw = " ".join(seg.text.strip() for seg in segments).strip()
+                cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE)
+                return cleaned.strip()
 
         return ""
