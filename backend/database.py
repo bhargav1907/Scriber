@@ -66,3 +66,32 @@ def clear_history() -> None:
     conn.execute("DELETE FROM transcriptions")
     conn.commit()
     conn.close()
+
+
+def get_stats() -> dict:
+    """Calculate usage stats: total transcriptions, word count, duration, and time saved."""
+    conn = _connect()
+    rows = conn.execute("SELECT cleaned_text, duration_seconds FROM transcriptions").fetchall()
+    conn.close()
+
+    total_count = len(rows)
+    total_words = 0
+    total_duration = 0.0
+
+    for row in rows:
+        text = row["cleaned_text"] or ""
+        total_words += len(text.split())
+        total_duration += (row["duration_seconds"] or 0.0)
+
+    # Average typing speed: 40 WPM. Average speaking: 150 WPM.
+    # Time to type = words / 40 minutes.
+    # Time to speak = words / 150 minutes.
+    # Time saved = words * (1/40 - 1/150) min = words * 0.01833 min.
+    time_saved_minutes = round(total_words * 0.01833, 1)
+
+    return {
+        "total_transcriptions": total_count,
+        "total_words": total_words,
+        "total_duration_seconds": round(total_duration, 1),
+        "time_saved_minutes": time_saved_minutes,
+    }

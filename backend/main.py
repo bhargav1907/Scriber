@@ -15,12 +15,14 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from config import load_config, save_config
-from database import init_db, save_transcription, get_history, delete_transcription, clear_history
+from database import init_db, save_transcription, get_history, delete_transcription, clear_history, get_stats
 from audio_recorder import AudioRecorder
 from transcriber import Transcriber
 from llm_cleaner import LLMCleaner
 from clipboard import paste_text
 from fn_listener import FnKeyListener
+from context_detector import get_frontmost_app
+from audio_ducker import AudioDucker
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +38,9 @@ class AppState:
             model=self.config.get("llm_model", "llama3.2:3b"),
             host=self.config.get("ollama_host", "http://localhost:11434"),
         )
+        self.audio_ducker = AudioDucker()
+        self.current_app = {"name": "General", "category": "general", "icon": "✨"}
+        self.current_mode = "general"
         self.is_recording = False
         self.is_processing = False
         self.websocket_clients: set[WebSocket] = set()
@@ -75,8 +80,23 @@ async def start_recording():
     """Start listening and recording audio from the microphone."""
     if state.is_processing or state.is_recording:
         return
+
+    # Detect frontmost active application context
+    app_info = get_frontmost_app()
+    config_mode = state.config.get("dictation_mode", "auto")
+    effective_mode = app_info.get("category", "general") if config_mode == "auto" else config_mode
+
+    state.current_app = app_info
+    state.current_mode = effective_mode
     state.is_recording = True
     last_level_ts = [0.0]
+
+    # Audio ducking (temporarily quiet background audio / music)
+    if state.config.get("audio_ducking", False):
+        try:
+            state.audio_ducker.duck()
+        except Exception:
+            pass
 
     def level_cb(level: float):
         now = time.time()
@@ -89,20 +109,29 @@ async def start_recording():
         ok = state.recorder.start()
         if not ok:
             state.is_recording = False
+            if state.config.get("audio_ducking", False):
+                state.audio_ducker.unduck()
             await broadcast({"type": "state", "state": "error", "message": "Mic stream failed"})
             await asyncio.sleep(2.0)
             await broadcast({"type": "state", "state": "idle"})
             return
     except Exception as e:
         state.is_recording = False
+        if state.config.get("audio_ducking", False):
+            state.audio_ducker.unduck()
         print(f"[Scriber] ❌ Failed to start recording: {e}")
         await broadcast({"type": "state", "state": "error", "message": str(e)})
         await asyncio.sleep(2.0)
         await broadcast({"type": "state", "state": "idle"})
         return
 
-    await broadcast({"type": "state", "state": "listening"})
-    print("[Scriber] 🎤 Recording started")
+    await broadcast({
+        "type": "state",
+        "state": "listening",
+        "active_app": state.current_app,
+        "mode": state.current_mode,
+    })
+    print(f"[Scriber] 🎤 Recording started (App: {state.current_app['name']}, Mode: {state.current_mode})")
 
 
 async def stop_recording():
@@ -111,7 +140,20 @@ async def stop_recording():
         return
     state.is_recording = False
     state.is_processing = True
-    await broadcast({"type": "state", "state": "processing"})
+
+    # Restore system volume immediately upon stopping recording
+    if state.config.get("audio_ducking", False):
+        try:
+            state.audio_ducker.unduck()
+        except Exception:
+            pass
+
+    await broadcast({
+        "type": "state",
+        "state": "processing",
+        "active_app": state.current_app,
+        "mode": state.current_mode,
+    })
     print("[Scriber] ⏳ Processing …")
 
     loop = asyncio.get_running_loop()
@@ -149,9 +191,11 @@ def _process_pipeline():
 
         t_pipeline_start = time.time()
 
-        # 1. Transcribe
+        # 1. Transcribe with custom vocabulary biasing Whisper acoustic model
         t_w0 = time.time()
-        raw_text = state.transcriber.transcribe(audio_path)
+        custom_vocab = state.config.get("custom_vocabulary", [])
+        initial_prompt = ", ".join(custom_vocab) if custom_vocab else None
+        raw_text = state.transcriber.transcribe(audio_path, initial_prompt=initial_prompt)
         t_whisper = time.time() - t_w0
 
         if not raw_text or not raw_text.strip():
@@ -160,18 +204,29 @@ def _process_pipeline():
             broadcast_from_thread({"type": "state", "state": "idle"})
             return
 
-        # 2. LLM cleanup (optional)
+        # 2. LLM cleanup with app mode context & word replacements
         cleaned_text = raw_text
         t_llm = 0.0
-        if state.config.get("llm_cleanup_enabled", True):
+        word_reps = state.config.get("word_replacements", {})
+        if state.config.get("llm_cleanup_enabled", True) and state.current_mode != "raw":
             t_l0 = time.time()
             try:
                 loop = asyncio.new_event_loop()
-                cleaned_text = loop.run_until_complete(state.cleaner.cleanup(raw_text))
+                cleaned_text = loop.run_until_complete(
+                    state.cleaner.cleanup(
+                        raw_text,
+                        mode=state.current_mode,
+                        custom_vocabulary=custom_vocab,
+                        word_replacements=word_reps,
+                    )
+                )
                 loop.close()
             except Exception as e:
                 print(f"[Scriber] LLM cleanup error (using raw text): {e}")
+                cleaned_text = state.cleaner._apply_replacements(raw_text, word_reps)
             t_llm = time.time() - t_l0
+        else:
+            cleaned_text = state.cleaner._apply_replacements(raw_text, word_reps)
 
         # 3. Paste into the active app
         if state.config.get("auto_paste", True):
@@ -182,6 +237,7 @@ def _process_pipeline():
         save_transcription(raw_text, cleaned_text, duration, state.config.get("whisper_model", "base"))
 
         t_total = time.time() - t_pipeline_start
+        word_count = len(cleaned_text.split())
 
         # 5. Broadcast success
         broadcast_from_thread({
@@ -191,6 +247,9 @@ def _process_pipeline():
             "cleaned_text": cleaned_text,
             "duration": round(duration, 1),
             "pipeline_time": round(t_total, 2),
+            "word_count": word_count,
+            "active_app": state.current_app,
+            "mode": state.current_mode,
         })
         print(f"[Scriber] ⚡ Processed in {t_total:.2f}s (STT: {t_whisper:.2f}s, LLM: {t_llm:.2f}s) → \"{cleaned_text[:60]}\"")
 
@@ -204,6 +263,11 @@ def _process_pipeline():
         broadcast_from_thread({"type": "state", "state": "idle"})
     finally:
         state.is_processing = False
+        if state.config.get("audio_ducking", False):
+            try:
+                state.audio_ducker.unduck()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -287,6 +351,7 @@ async def ws_endpoint(websocket: WebSocket):
         "config": state.config,
         "whisper_ready": state.transcriber.is_ready,
         "audio_devices": AudioRecorder.get_input_devices(force_refresh=True),
+        "stats": get_stats(),
     })
 
     try:
@@ -331,7 +396,13 @@ async def health():
         "is_recording": state.is_recording,
         "is_processing": state.is_processing,
         "audio_devices": AudioRecorder.get_input_devices(),
+        "stats": get_stats(),
     }
+
+
+@app.get("/api/stats")
+async def api_stats():
+    return get_stats()
 
 
 @app.get("/api/audio-devices")

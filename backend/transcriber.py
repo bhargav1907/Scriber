@@ -104,9 +104,10 @@ class Transcriber:
         finally:
             self._loading = False
 
-    def transcribe(self, audio_path: str) -> str:
+    def transcribe(self, audio_path: str, initial_prompt: str | None = None) -> str:
         """
         Transcribe an audio file to text using Metal GPU or greedy CPU search.
+        Biases acoustic decoding with initial_prompt (e.g. custom vocabulary / names).
         """
         if not self.is_ready:
             self.load_model()
@@ -127,6 +128,7 @@ class Transcriber:
                         language="en",
                         temperature=0.0,
                         condition_on_previous_text=False,
+                        initial_prompt=initial_prompt,
                         word_timestamps=False,
                         fp16=True,
                     )
@@ -143,6 +145,7 @@ class Transcriber:
                     best_of=1,
                     temperature=0.0,
                     condition_on_previous_text=False,
+                    initial_prompt=initial_prompt,
                     without_timestamps=True,
                     vad_filter=True,
                     vad_parameters=dict(

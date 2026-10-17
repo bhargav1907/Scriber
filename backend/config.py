@@ -11,13 +11,17 @@ CONFIG_FILE = APP_DIR / "config.json"
 DB_FILE = APP_DIR / "scriber.db"
 
 DEFAULT_CONFIG = {
-    "whisper_model": "base",
+    "whisper_model": "large-v3-turbo",
     "llm_cleanup_enabled": True,
     "llm_model": "llama3.2:3b",
     "ollama_host": "http://localhost:11434",
     "auto_paste": True,
     "sound_effects": True,
     "input_device": None,
+    "dictation_mode": "auto",  # auto, general, email, code, notes, raw
+    "custom_vocabulary": ["Scriber", "Bhargav", "Kivi", "Ollama", "Whisper", "Apple Silicon", "MLX"],
+    "word_replacements": {"btw": "by the way", "lgtm": "Looks good to me!"},
+    "audio_ducking": False,
 }
 
 

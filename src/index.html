@@ -6,7 +6,7 @@
   <title>Scriber</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="index.css">
 </head>
 <body>
@@ -26,18 +26,58 @@
             <div class="logo-wave w3"></div>
           </div>
           <h1>Scriber</h1>
+          <span class="engine-badge">⚡ Metal GPU</span>
         </div>
-        <p class="subtitle">Voice to text, locally.</p>
+        <p class="subtitle">Sub-second local voice dictation for macOS</p>
       </div>
+
       <div class="header-actions">
+        <!-- Quick Mode Pill -->
+        <div class="mode-pill-container" title="Current Dictation Mode">
+          <select id="quickModeSelect" class="mode-select-pill">
+            <option value="auto">✨ Auto Context</option>
+            <option value="general">💬 General</option>
+            <option value="code">💻 Code</option>
+            <option value="email">✉️ Email</option>
+            <option value="notes">📝 Notes</option>
+            <option value="chat">⚡ Chat</option>
+            <option value="raw">🎙 Raw</option>
+          </select>
+        </div>
+
         <button class="btn-icon" id="btnRefresh" title="Refresh history">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
         </button>
         <button class="btn-icon" id="btnSettings" title="Settings">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
       </div>
     </header>
+
+    <!-- ── Live Stats Ribbon ─────────────────────────────────────── -->
+    <div class="stats-ribbon">
+      <div class="stat-card">
+        <div class="stat-icon">🎤</div>
+        <div class="stat-info">
+          <span class="stat-value" id="statDictations">0</span>
+          <span class="stat-label">Dictations</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📝</div>
+        <div class="stat-info">
+          <span class="stat-value" id="statWords">0</span>
+          <span class="stat-label">Words Dictated</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">⚡</div>
+        <div class="stat-info">
+          <span class="stat-value" id="statSaved">0m</span>
+          <span class="stat-label">Time Saved</span>
+        </div>
+      </div>
+    </div>
 
     <!-- ── Status Bar ───────────────────────────────────────────── -->
     <div class="status-bar" id="statusBar">
@@ -46,24 +86,31 @@
           <span class="status-badge-dot"></span>
           Ready
         </span>
-        <span class="status-info" id="statusInfo">Press <kbd>Fn</kbd> or <kbd>⌥</kbd> <kbd>Space</kbd> to start</span>
+        <span class="status-info" id="statusInfo">Press <kbd>Fn</kbd> or <kbd>⌥</kbd> <kbd>Space</kbd> to dictate</span>
       </div>
       <div class="status-bar-right">
-        <span class="health-dot" id="healthWhisper" title="Whisper model"></span>
-        <span class="health-label">Whisper</span>
-        <span class="health-dot" id="healthOllama" title="Ollama"></span>
+        <span class="health-dot" id="healthWhisper" title="Whisper Metal GPU"></span>
+        <span class="health-label">Metal GPU</span>
+        <span class="health-dot" id="healthOllama" title="Ollama Text Polishing"></span>
         <span class="health-label">Ollama</span>
       </div>
     </div>
 
     <!-- ── Main Content: History View ───────────────────────────── -->
     <main class="content" id="viewHistory">
+      <!-- Search Filter Bar -->
+      <div class="search-container">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="historySearch" class="search-input" placeholder="Search transcriptions by keyword…" autocomplete="off">
+        <button class="search-clear" id="searchClear" style="display: none;">✕</button>
+      </div>
+
       <div class="history-list" id="historyList">
         <!-- Entries injected by JS -->
         <div class="empty-state" id="emptyState">
           <div class="empty-icon">🎤</div>
           <h3>No transcriptions yet</h3>
-          <p>Press <kbd>Fn</kbd> or <kbd>⌥</kbd> <kbd>Space</kbd> to start dictating</p>
+          <p>Press <kbd>Fn</kbd> or <kbd>⌥</kbd> <kbd>Space</kbd> to dictate anywhere</p>
         </div>
       </div>
     </main>
@@ -72,12 +119,13 @@
     <main class="content settings-view" id="viewSettings" style="display: none;">
       <div class="settings-panel">
 
+        <!-- Audio & Transcription -->
         <div class="settings-group">
           <h3 class="settings-group-title">Audio & Transcription</h3>
           <div class="setting-row">
             <div class="setting-label">
               <span>Microphone</span>
-              <span class="setting-desc">Select audio input device</span>
+              <span class="setting-desc">Auto-switches with system default (Bose, AirPods, etc.)</span>
             </div>
             <select class="setting-select" id="settingInputDevice">
               <option value="default">System Default</option>
@@ -85,22 +133,47 @@
           </div>
           <div class="setting-row">
             <div class="setting-label">
-              <span>Whisper Model</span>
-              <span class="setting-desc">Larger = more accurate, slower</span>
+              <span>Whisper Engine Model</span>
+              <span class="setting-desc">Apple Silicon Metal GPU accelerated</span>
             </div>
             <select class="setting-select" id="settingWhisperModel">
-              <option value="tiny">Tiny (~75 MB)</option>
+              <option value="large-v3-turbo">Large v3 Turbo (Metal GPU ~0.6s - Recommended)</option>
               <option value="base">Base (~150 MB)</option>
               <option value="small">Small (~500 MB)</option>
               <option value="medium">Medium (~1.5 GB)</option>
-              <option value="large-v3-turbo">Large v3 Turbo (~1 GB - Recommended)</option>
               <option value="large-v3">Large v3 (~3 GB)</option>
+              <option value="tiny">Tiny (~75 MB)</option>
             </select>
           </div>
           <div class="setting-row">
             <div class="setting-label">
+              <span>Dictation Mode</span>
+              <span class="setting-desc">Smart context detection adjusts tone for the active app</span>
+            </div>
+            <select class="setting-select" id="settingDictationMode">
+              <option value="auto">Auto (Detects VS Code, Mail, Slack, Notion, etc.)</option>
+              <option value="general">General (Natural speech cleanup)</option>
+              <option value="code">Code & Developer (Code identifiers, commit messages)</option>
+              <option value="email">Email & Business (Polite, structured paragraphs)</option>
+              <option value="notes">Notes & Markdown (Clean bullet points and outlines)</option>
+              <option value="chat">Casual Chat (Snappy, informal)</option>
+              <option value="raw">Raw (Direct Whisper output, bypass LLM)</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Audio Ducking</span>
+              <span class="setting-desc">Temporarily lowers system music/video volume while speaking</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="settingAudioDucking">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
               <span>AI Text Cleanup</span>
-              <span class="setting-desc">Remove filler words, fix punctuation</span>
+              <span class="setting-desc">Remove filler words, fix grammar & punctuation</span>
             </div>
             <label class="toggle">
               <input type="checkbox" id="settingLLMCleanup" checked>
@@ -110,7 +183,7 @@
           <div class="setting-row">
             <div class="setting-label">
               <span>Auto Paste</span>
-              <span class="setting-desc">Paste text into the active app automatically</span>
+              <span class="setting-desc">Instantly paste formatted text into the active app</span>
             </div>
             <label class="toggle">
               <input type="checkbox" id="settingAutoPaste" checked>
@@ -119,30 +192,60 @@
           </div>
         </div>
 
+        <!-- Custom Vocabulary -->
         <div class="settings-group">
-          <h3 class="settings-group-title">AI Cleanup Model</h3>
+          <h3 class="settings-group-title">Custom Vocabulary</h3>
+          <p class="settings-group-subtitle">Words, names, and acronyms Whisper and the LLM should always recognize and capitalize properly.</p>
+          <div class="vocab-input-row">
+            <input type="text" class="setting-input" id="inputNewVocab" placeholder="e.g. Bhargav, Scriber, Kubernetes, API">
+            <button class="btn-primary" id="btnAddVocab">Add</button>
+          </div>
+          <div class="vocab-tags-container" id="vocabTagsContainer">
+            <!-- Tags injected by JS -->
+          </div>
+        </div>
+
+        <!-- Word Replacements -->
+        <div class="settings-group">
+          <h3 class="settings-group-title">Shorthand Replacements</h3>
+          <p class="settings-group-subtitle">Spoken acronyms or shortcuts will automatically expand into full phrases.</p>
+          <div class="replacement-input-row">
+            <input type="text" class="setting-input" id="repTrigger" placeholder="When spoken: btw">
+            <span class="rep-arrow">→</span>
+            <input type="text" class="setting-input" id="repExpansion" placeholder="Replace with: by the way">
+            <button class="btn-primary" id="btnAddRep">Add</button>
+          </div>
+          <div class="replacements-list" id="replacementsList">
+            <!-- Replacements injected by JS -->
+          </div>
+        </div>
+
+        <!-- AI Cleanup Model -->
+        <div class="settings-group">
+          <h3 class="settings-group-title">Local AI Polisher</h3>
           <div class="setting-row">
             <div class="setting-label">
               <span>LLM Model</span>
-              <span class="setting-desc">Ollama model for text cleanup</span>
+              <span class="setting-desc">Ollama model for text formatting</span>
             </div>
             <input type="text" class="setting-input" id="settingLLMModel" value="llama3.2:3b" placeholder="llama3.2:3b">
           </div>
           <div class="setting-row">
             <div class="setting-label">
               <span>Ollama Host</span>
-              <span class="setting-desc">Usually http://localhost:11434</span>
+              <span class="setting-desc">Local Ollama endpoint</span>
             </div>
             <input type="text" class="setting-input" id="settingOllamaHost" value="http://localhost:11434" placeholder="http://localhost:11434">
           </div>
         </div>
 
+        <!-- Data -->
         <div class="settings-group">
-          <h3 class="settings-group-title">Data</h3>
+          <h3 class="settings-group-title">History & Storage</h3>
           <div class="setting-row">
             <div class="setting-label">
               <span>Clear History</span>
-              <span class="setting-desc">Delete all saved transcriptions</span>
+              <span class="setting-desc">Delete all stored transcriptions and reset stats</span>
             </div>
             <button class="btn-danger" id="btnClearHistory">Clear All</button>
           </div>

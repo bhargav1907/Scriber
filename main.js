@@ -134,9 +134,9 @@ function createWidgetWindow() {
   const { width: screenW } = display.workAreaSize;
 
   widgetWindow = new BrowserWindow({
-    width: 340,
-    height: 52,
-    x: Math.round(screenW / 2 - 170),
+    width: 380,
+    height: 56,
+    x: Math.round(screenW / 2 - 190),
     y: 16,
     frame: false,
     transparent: true,
@@ -164,7 +164,7 @@ function showWidget() {
     const cursor = screen.getCursorScreenPoint();
     const activeDisplay = screen.getDisplayNearestPoint(cursor);
     const { x: dispX, y: dispY, width: dispW } = activeDisplay.bounds;
-    const widgetW = 340;
+    const widgetW = 380;
     const targetX = Math.round(dispX + (dispW - widgetW) / 2);
     const targetY = dispY + 16;
 
@@ -341,6 +341,12 @@ function handleBackendMessage(msg) {
       if (msg.audio_devices) {
         sendToAllRenderers('audio-devices-update', msg.audio_devices);
       }
+      if (msg.stats) {
+        sendToAllRenderers('stats-update', msg.stats);
+      }
+      if (msg.state === 'done') {
+        ipcMain.emit('fetch-stats');
+      }
       break;
 
     case 'audio_level':
@@ -384,13 +390,24 @@ function setupIPC() {
     if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
   });
 
-  // REST-backed actions (history, config)
+  // REST-backed actions (history, stats, config)
   ipcMain.on('fetch-history', async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/history`);
       const data = await res.json();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('history-update', data);
+      }
+    } catch {}
+    ipcMain.emit('fetch-stats');
+  });
+
+  ipcMain.on('fetch-stats', async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/stats`);
+      const data = await res.json();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('stats-update', data);
       }
     } catch {}
   });
@@ -409,6 +426,7 @@ function setupIPC() {
     try {
       await fetch(`${BACKEND_URL}/api/history/${id}`, { method: 'DELETE' });
       ipcMain.emit('fetch-history');
+      ipcMain.emit('fetch-stats');
     } catch {}
   });
 
@@ -416,6 +434,7 @@ function setupIPC() {
     try {
       await fetch(`${BACKEND_URL}/api/history`, { method: 'DELETE' });
       ipcMain.emit('fetch-history');
+      ipcMain.emit('fetch-stats');
     } catch {}
   });
 

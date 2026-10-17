@@ -1,32 +1,62 @@
 /**
- * Scriber — Main Window Renderer
- * Manages the history view, settings panel, and status bar.
+ * Scriber — Main Dashboard Renderer
+ * Controls live stats, history filtering, 1-click copy, dictation modes,
+ * custom vocabulary, shorthand replacements, and audio configuration.
  */
 
-// ─── DOM Refs ─────────────────────────────────────────────────────
+// ─── DOM References ───────────────────────────────────────────────
 
-const historyList    = document.getElementById('historyList');
-const emptyState     = document.getElementById('emptyState');
-const statusBadge    = document.getElementById('statusBadge');
-const statusInfo     = document.getElementById('statusInfo');
-const healthWhisper  = document.getElementById('healthWhisper');
-const healthOllama   = document.getElementById('healthOllama');
-const btnSettings    = document.getElementById('btnSettings');
-const btnRefresh     = document.getElementById('btnRefresh');
-const viewHistory    = document.getElementById('viewHistory');
-const viewSettings   = document.getElementById('viewSettings');
+const historyList       = document.getElementById('historyList');
+const emptyState        = document.getElementById('emptyState');
+const statusBadge       = document.getElementById('statusBadge');
+const statusInfo        = document.getElementById('statusInfo');
+const healthWhisper     = document.getElementById('healthWhisper');
+const healthOllama      = document.getElementById('healthOllama');
+const btnSettings       = document.getElementById('btnSettings');
+const btnRefresh        = document.getElementById('btnRefresh');
+const viewHistory       = document.getElementById('viewHistory');
+const viewSettings      = document.getElementById('viewSettings');
+
+// Live stats
+const statDictations    = document.getElementById('statDictations');
+const statWords         = document.getElementById('statWords');
+const statSaved         = document.getElementById('statSaved');
+
+// Search
+const historySearch     = document.getElementById('historySearch');
+const searchClear       = document.getElementById('searchClear');
+
+// Mode selectors
+const quickModeSelect   = document.getElementById('quickModeSelect');
+const settingDictationMode = document.getElementById('settingDictationMode');
 
 // Settings controls
 const settingInputDevice  = document.getElementById('settingInputDevice');
 const settingWhisperModel = document.getElementById('settingWhisperModel');
+const settingAudioDucking = document.getElementById('settingAudioDucking');
 const settingLLMCleanup   = document.getElementById('settingLLMCleanup');
 const settingAutoPaste    = document.getElementById('settingAutoPaste');
 const settingLLMModel     = document.getElementById('settingLLMModel');
 const settingOllamaHost   = document.getElementById('settingOllamaHost');
 const btnClearHistory     = document.getElementById('btnClearHistory');
 
+// Custom Vocabulary controls
+const inputNewVocab       = document.getElementById('inputNewVocab');
+const btnAddVocab         = document.getElementById('btnAddVocab');
+const vocabTagsContainer  = document.getElementById('vocabTagsContainer');
+
+// Shorthand Replacements controls
+const repTrigger          = document.getElementById('repTrigger');
+const repExpansion        = document.getElementById('repExpansion');
+const btnAddRep           = document.getElementById('btnAddRep');
+const replacementsList    = document.getElementById('replacementsList');
+
 let currentView = 'history';
 let history = [];
+let searchQuery = '';
+let currentCustomVocabulary = [];
+let currentWordReplacements = {};
+let currentConfigDevice = null;
 
 // ─── View Toggling ────────────────────────────────────────────────
 
@@ -46,9 +76,49 @@ btnSettings.addEventListener('click', () => {
 
 btnRefresh.addEventListener('click', () => {
   window.scriber.fetchHistory();
+  window.scriber.fetchStats();
   btnRefresh.style.transform = 'rotate(360deg)';
   setTimeout(() => { btnRefresh.style.transform = ''; }, 500);
 });
+
+// ─── Live Stats ───────────────────────────────────────────────────
+
+function updateStats(stats) {
+  if (!stats) return;
+  statDictations.textContent = (stats.total_transcriptions || 0).toLocaleString();
+  statWords.textContent = (stats.total_words || 0).toLocaleString();
+  const mins = stats.time_saved_minutes || 0;
+  statSaved.textContent = mins >= 60 ? `${(mins / 60).toFixed(1)}h` : `${mins}m`;
+}
+
+// ─── Search Filtering ─────────────────────────────────────────────
+
+historySearch.addEventListener('input', (e) => {
+  searchQuery = e.target.value.toLowerCase().trim();
+  searchClear.style.display = searchQuery ? 'block' : 'none';
+  renderFilteredHistory();
+});
+
+searchClear.addEventListener('click', () => {
+  historySearch.value = '';
+  searchQuery = '';
+  searchClear.style.display = 'none';
+  renderFilteredHistory();
+  historySearch.focus();
+});
+
+function renderFilteredHistory() {
+  if (!searchQuery) {
+    renderHistory(history);
+    return;
+  }
+  const filtered = history.filter(item => {
+    const cleaned = (item.cleaned_text || '').toLowerCase();
+    const raw = (item.raw_text || '').toLowerCase();
+    return cleaned.includes(searchQuery) || raw.includes(searchQuery);
+  });
+  renderHistory(filtered);
+}
 
 // ─── Status Bar ───────────────────────────────────────────────────
 
@@ -57,12 +127,13 @@ function updateStatusBadge(state, extra = {}) {
 
   switch (state) {
     case 'listening':
-      statusBadge.innerHTML = '<span class="status-badge-dot"></span>Recording';
-      statusInfo.textContent = 'Speak now…';
+      const appName = extra.active_app?.name ? ` · ${extra.active_app.name}` : '';
+      statusBadge.innerHTML = `<span class="status-badge-dot"></span>Recording${appName}`;
+      statusInfo.textContent = 'Speak clearly into your microphone…';
       break;
     case 'processing':
       statusBadge.innerHTML = '<span class="status-badge-dot"></span>Processing';
-      statusInfo.textContent = 'Transcribing & cleaning up…';
+      statusInfo.textContent = 'Metal GPU STT + AI Polishing…';
       break;
     case 'done':
       statusBadge.innerHTML = '<span class="status-badge-dot"></span>Done';
@@ -70,8 +141,10 @@ function updateStatusBadge(state, extra = {}) {
       statusInfo.textContent = extra.cleaned_text
         ? `"${extra.cleaned_text.slice(0, 50)}${extra.cleaned_text.length > 50 ? '…' : ''}"${timeStr}`
         : `Text pasted!${timeStr}`;
-      // Refresh history
-      setTimeout(() => window.scriber.fetchHistory(), 500);
+      setTimeout(() => {
+        window.scriber.fetchHistory();
+        window.scriber.fetchStats();
+      }, 500);
       break;
     case 'error':
       statusBadge.innerHTML = '<span class="status-badge-dot"></span>Error';
@@ -79,20 +152,26 @@ function updateStatusBadge(state, extra = {}) {
       break;
     default:
       statusBadge.innerHTML = '<span class="status-badge-dot"></span>Ready';
-      statusInfo.innerHTML = 'Press <kbd>Fn</kbd> or <kbd>⌥</kbd> <kbd>Space</kbd> to start';
+      statusInfo.innerHTML = 'Press <kbd>Fn</kbd> or <kbd>⌥</kbd> <kbd>Space</kbd> to dictate';
   }
 }
 
 // ─── History Rendering ────────────────────────────────────────────
 
 function renderHistory(items) {
-  history = items;
   // Clear existing entries (keep empty state)
   const existing = historyList.querySelectorAll('.history-entry, .date-group');
   existing.forEach(el => el.remove());
 
   if (!items || items.length === 0) {
     emptyState.style.display = '';
+    if (searchQuery) {
+      emptyState.querySelector('h3').textContent = 'No matching dictations';
+      emptyState.querySelector('p').textContent = `No results found for "${searchQuery}"`;
+    } else {
+      emptyState.querySelector('h3').textContent = 'No transcriptions yet';
+      emptyState.querySelector('p').innerHTML = 'Press <kbd>Fn</kbd> or <kbd>⌥</kbd> <kbd>Space</kbd> to dictate anywhere';
+    }
     return;
   }
 
@@ -104,7 +183,7 @@ function renderHistory(items) {
     const ts = new Date(entry.timestamp);
     const dateStr = getDateLabel(ts);
 
-    // Add date group header if needed
+    // Date group header
     if (dateStr !== lastDate) {
       lastDate = dateStr;
       const dateEl = document.createElement('div');
@@ -113,48 +192,57 @@ function renderHistory(items) {
       historyList.appendChild(dateEl);
     }
 
+    const words = (entry.cleaned_text || '').split(/\s+/).filter(Boolean).length;
     const el = document.createElement('div');
     el.className = 'history-entry';
-    el.style.animationDelay = `${index * 0.04}s`;
+    el.style.animationDelay = `${Math.min(index * 0.03, 0.3)}s`;
     el.innerHTML = `
       <div class="history-entry-header">
         <div class="history-entry-meta">
           <span class="time">${formatTime(ts)}</span>
-          <span class="duration">${entry.duration_seconds}s</span>
+          <span class="duration">${entry.duration_seconds || 0}s</span>
+          <span class="words-tag">${words} words</span>
         </div>
         <div class="history-entry-actions">
-          <button class="btn-small copy" title="Copy to clipboard" data-text="${escapeAttr(entry.cleaned_text)}">📋</button>
+          <button class="btn-small copy" title="Copy to clipboard">📋</button>
           <button class="btn-small delete" title="Delete" data-id="${entry.id}">🗑</button>
         </div>
       </div>
       <div class="history-entry-text">${escapeHtml(entry.cleaned_text)}</div>
-      ${entry.raw_text !== entry.cleaned_text
-        ? `<div class="history-entry-raw"><strong>Raw:</strong> ${escapeHtml(entry.raw_text)}</div>`
+      ${entry.raw_text && entry.raw_text !== entry.cleaned_text
+        ? `<div class="history-entry-raw"><strong>Raw STT:</strong> ${escapeHtml(entry.raw_text)}</div>`
         : ''
       }
     `;
 
-    // Toggle raw text on click
+    // Toggle raw text diff view on card click
     el.addEventListener('click', (e) => {
       if (e.target.closest('.btn-small')) return;
       el.classList.toggle('expanded');
     });
 
-    // Copy button
-    el.querySelector('.copy')?.addEventListener('click', (e) => {
+    // 1-Click Copy with visual checkmark feedback
+    const btnCopy = el.querySelector('.copy');
+    btnCopy?.addEventListener('click', (e) => {
       e.stopPropagation();
       navigator.clipboard.writeText(entry.cleaned_text);
+      btnCopy.textContent = '✓';
+      btnCopy.classList.add('copied');
       showToast('Copied to clipboard');
+      setTimeout(() => {
+        btnCopy.textContent = '📋';
+        btnCopy.classList.remove('copied');
+      }, 1200);
     });
 
-    // Delete button
+    // Delete
     el.querySelector('.delete')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      el.style.transform = 'translateX(100%)';
+      el.style.transform = 'translateX(80px)';
       el.style.opacity = '0';
       setTimeout(() => {
         window.scriber.deleteEntry(entry.id);
-      }, 300);
+      }, 250);
     });
 
     historyList.appendChild(el);
@@ -182,11 +270,7 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function escapeAttr(str) {
-  return str.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-// ─── Toast ────────────────────────────────────────────────────────
+// ─── Toast Notifications ──────────────────────────────────────────
 
 let toastEl = null;
 
@@ -198,12 +282,116 @@ function showToast(message) {
   }
   toastEl.textContent = message;
   toastEl.classList.add('show');
-  setTimeout(() => toastEl.classList.remove('show'), 2000);
+  setTimeout(() => toastEl.classList.remove('show'), 1800);
 }
 
-// ─── Settings ─────────────────────────────────────────────────────
+// ─── Custom Vocabulary Management ─────────────────────────────────
 
-let currentConfigDevice = null;
+function renderVocabularyTags(vocabList) {
+  currentCustomVocabulary = Array.isArray(vocabList) ? vocabList : [];
+  vocabTagsContainer.innerHTML = '';
+
+  if (currentCustomVocabulary.length === 0) {
+    vocabTagsContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 12px;">No custom terms yet. Add names, brand words, or code identifiers below.</span>';
+    return;
+  }
+
+  currentCustomVocabulary.forEach((term, index) => {
+    const tag = document.createElement('div');
+    tag.className = 'vocab-tag';
+    tag.innerHTML = `
+      <span>${escapeHtml(term)}</span>
+      <button class="vocab-tag-remove" data-index="${index}" title="Remove">✕</button>
+    `;
+    tag.querySelector('.vocab-tag-remove').addEventListener('click', () => {
+      removeVocabularyTerm(index);
+    });
+    vocabTagsContainer.appendChild(tag);
+  });
+}
+
+function addVocabularyTerm() {
+  const val = inputNewVocab.value.trim();
+  if (!val) return;
+  // Split multiple if comma separated
+  const terms = val.split(',').map(s => s.trim()).filter(Boolean);
+  terms.forEach(term => {
+    if (!currentCustomVocabulary.includes(term)) {
+      currentCustomVocabulary.push(term);
+    }
+  });
+  inputNewVocab.value = '';
+  renderVocabularyTags(currentCustomVocabulary);
+  sendConfigUpdate('custom_vocabulary', currentCustomVocabulary);
+  showToast('Vocabulary updated');
+}
+
+function removeVocabularyTerm(index) {
+  currentCustomVocabulary.splice(index, 1);
+  renderVocabularyTags(currentCustomVocabulary);
+  sendConfigUpdate('custom_vocabulary', currentCustomVocabulary);
+}
+
+btnAddVocab.addEventListener('click', addVocabularyTerm);
+inputNewVocab.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addVocabularyTerm();
+  }
+});
+
+// ─── Shorthand Replacements Management ────────────────────────────
+
+function renderReplacements(replacements) {
+  currentWordReplacements = (replacements && typeof replacements === 'object') ? replacements : {};
+  replacementsList.innerHTML = '';
+
+  const entries = Object.entries(currentWordReplacements);
+  if (entries.length === 0) {
+    replacementsList.innerHTML = '<span style="color: var(--text-muted); font-size: 12px; padding: 6px;">No replacements added yet.</span>';
+    return;
+  }
+
+  entries.forEach(([trigger, expansion]) => {
+    const row = document.createElement('div');
+    row.className = 'replacement-item';
+    row.innerHTML = `
+      <span class="rep-trigger">${escapeHtml(trigger)}</span>
+      <span class="rep-arrow">→</span>
+      <span class="rep-expansion">${escapeHtml(expansion)}</span>
+      <button class="rep-delete" title="Delete replacement">🗑</button>
+    `;
+    row.querySelector('.rep-delete').addEventListener('click', () => {
+      delete currentWordReplacements[trigger];
+      renderReplacements(currentWordReplacements);
+      sendConfigUpdate('word_replacements', currentWordReplacements);
+    });
+    replacementsList.appendChild(row);
+  });
+}
+
+function addReplacement() {
+  const trigger = repTrigger.value.trim().toLowerCase();
+  const expansion = repExpansion.value.trim();
+  if (!trigger || !expansion) return;
+
+  currentWordReplacements[trigger] = expansion;
+  repTrigger.value = '';
+  repExpansion.value = '';
+  renderReplacements(currentWordReplacements);
+  sendConfigUpdate('word_replacements', currentWordReplacements);
+  showToast('Shorthand added');
+}
+
+btnAddRep.addEventListener('click', addReplacement);
+repExpansion.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addReplacement();
+  }
+});
+
+// ─── Audio Devices ────────────────────────────────────────────────
 
 function renderAudioDevices(data, selectedId = null) {
   if (!data) return;
@@ -236,21 +424,37 @@ function renderAudioDevices(data, selectedId = null) {
     settingInputDevice.value = 'default';
   } else {
     const match = Array.from(settingInputDevice.options).find(o => o.value === prevVal || o.dataset?.id === prevVal);
-    if (match) {
-      settingInputDevice.value = match.value;
-    } else {
-      settingInputDevice.value = 'default';
-    }
+    settingInputDevice.value = match ? match.value : 'default';
   }
 }
 
+// ─── Config Sync ──────────────────────────────────────────────────
+
 function applyConfig(config) {
   if (!config) return;
-  settingWhisperModel.value = config.whisper_model || 'base';
+
+  // Whisper & Cleanup
+  settingWhisperModel.value = config.whisper_model || 'large-v3-turbo';
   settingLLMCleanup.checked = config.llm_cleanup_enabled !== false;
   settingAutoPaste.checked = config.auto_paste !== false;
+  settingAudioDucking.checked = config.audio_ducking === true;
   settingLLMModel.value = config.llm_model || 'llama3.2:3b';
   settingOllamaHost.value = config.ollama_host || 'http://localhost:11434';
+
+  // Dictation Mode
+  const mode = config.dictation_mode || 'auto';
+  quickModeSelect.value = mode;
+  settingDictationMode.value = mode;
+
+  // Custom Vocab & Replacements
+  if (config.custom_vocabulary) {
+    renderVocabularyTags(config.custom_vocabulary);
+  }
+  if (config.word_replacements) {
+    renderReplacements(config.word_replacements);
+  }
+
+  // Input Device
   if (config.input_device !== undefined) {
     currentConfigDevice = config.input_device;
     if (config.input_device === null || config.input_device === 'default') {
@@ -258,11 +462,7 @@ function applyConfig(config) {
     } else {
       const valStr = String(config.input_device);
       const match = Array.from(settingInputDevice.options).find(o => o.value === valStr || o.dataset?.id === valStr);
-      if (match) {
-        settingInputDevice.value = match.value;
-      } else {
-        settingInputDevice.value = 'default';
-      }
+      settingInputDevice.value = match ? match.value : 'default';
     }
   }
 }
@@ -271,6 +471,21 @@ function sendConfigUpdate(key, value) {
   window.scriber.updateConfig({ [key]: value });
 }
 
+// Event Listeners for Config Controls
+quickModeSelect.addEventListener('change', () => {
+  const mode = quickModeSelect.value;
+  settingDictationMode.value = mode;
+  sendConfigUpdate('dictation_mode', mode);
+  showToast(`Dictation mode: ${mode}`);
+});
+
+settingDictationMode.addEventListener('change', () => {
+  const mode = settingDictationMode.value;
+  quickModeSelect.value = mode;
+  sendConfigUpdate('dictation_mode', mode);
+  showToast(`Dictation mode: ${mode}`);
+});
+
 settingInputDevice.addEventListener('change', () => {
   const val = settingInputDevice.value;
   const deviceVal = val === 'default' ? null : val;
@@ -278,7 +493,9 @@ settingInputDevice.addEventListener('change', () => {
   sendConfigUpdate('input_device', deviceVal);
   showToast('Microphone updated');
 });
+
 settingWhisperModel.addEventListener('change', () => sendConfigUpdate('whisper_model', settingWhisperModel.value));
+settingAudioDucking.addEventListener('change', () => sendConfigUpdate('audio_ducking', settingAudioDucking.checked));
 settingLLMCleanup.addEventListener('change', () => sendConfigUpdate('llm_cleanup_enabled', settingLLMCleanup.checked));
 settingAutoPaste.addEventListener('change', () => sendConfigUpdate('auto_paste', settingAutoPaste.checked));
 settingLLMModel.addEventListener('change', () => sendConfigUpdate('llm_model', settingLLMModel.value));
@@ -295,7 +512,6 @@ btnClearHistory.addEventListener('click', () => {
 settingInputDevice.addEventListener('focus', () => window.scriber.fetchAudioDevices());
 settingInputDevice.addEventListener('mousedown', () => window.scriber.fetchAudioDevices());
 
-// Browser hardware change listener (triggers when Bluetooth headset connects/disconnects)
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
   navigator.mediaDevices.addEventListener('devicechange', () => {
     window.scriber.fetchAudioDevices();
@@ -307,10 +523,10 @@ if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
 window.scriber.onStateChange((data) => {
   updateStatusBadge(data.state, data);
 
-  // Apply config on init
   if (data.type === 'init') {
     if (data.audio_devices) renderAudioDevices(data.audio_devices);
     if (data.config) applyConfig(data.config);
+    if (data.stats) updateStats(data.stats);
   }
 });
 
@@ -319,7 +535,12 @@ window.scriber.onConfigChange((data) => {
 });
 
 window.scriber.onHistoryUpdate((data) => {
-  renderHistory(data);
+  history = data || [];
+  renderFilteredHistory();
+});
+
+window.scriber.onStatsUpdate((data) => {
+  updateStats(data);
 });
 
 window.scriber.onAudioDevicesUpdate((devices) => {
@@ -332,21 +553,25 @@ window.scriber.onHealthUpdate((data) => {
   if (data.audio_devices) {
     renderAudioDevices(data.audio_devices);
   }
+  if (data.stats) {
+    updateStats(data.stats);
+  }
 });
 
-// ─── Init ─────────────────────────────────────────────────────────
+// ─── Initialization ───────────────────────────────────────────────
 
-// Fetch history, devices, and health on load
 window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     window.scriber.fetchHistory();
+    window.scriber.fetchStats();
     window.scriber.fetchAudioDevices();
     window.scriber.requestHealth();
-  }, 500);
+  }, 400);
 
-  // Poll health and audio devices every 5 seconds
+  // Poll health, stats, and audio devices every 5 seconds
   setInterval(() => {
     window.scriber.requestHealth();
+    window.scriber.fetchStats();
     window.scriber.fetchAudioDevices();
   }, 5000);
 });

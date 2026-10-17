@@ -1,21 +1,27 @@
 /**
  * Scriber — Floating Widget Renderer
- * Receives state + audio-level updates from the main process via IPC
- * and drives the widget UI (dot, text, timer, meter).
+ * Handles real-time status transitions, active app badge, sound synthesis,
+ * and 7-bar audio reactive visualizer.
  */
 
-const widget   = document.getElementById('widget');
-const dot      = document.getElementById('statusDot');
-const text     = document.getElementById('statusText');
-const timer    = document.getElementById('timer');
-const bars     = [0, 1, 2, 3, 4].map(i => document.getElementById(`bar${i}`));
+const widget     = document.getElementById('widget');
+const dot        = document.getElementById('statusDot');
+const text       = document.getElementById('statusText');
+const timer      = document.getElementById('timer');
+const appBadge   = document.getElementById('appBadge');
+const appIcon    = document.getElementById('appIcon');
+const appName    = document.getElementById('appName');
+const speedBadge = document.getElementById('speedBadge');
+const speedText  = document.getElementById('speedText');
+
+const bars = [0, 1, 2, 3, 4, 5, 6].map(i => document.getElementById(`bar${i}`));
 
 let timerInterval = null;
 let recordStart   = 0;
 
-// ─── Sound Effects (tiny synthesized bleeps) ──────────────────────
+// ─── Sound Effects (Synthesized on Apple AudioContext) ─────────────
 
-function playTone(freq, duration = 0.15, vol = 0.08) {
+function playTone(freq, duration = 0.12, vol = 0.07) {
   try {
     const ctx = new AudioContext();
     const osc = ctx.createOscillator();
@@ -31,9 +37,21 @@ function playTone(freq, duration = 0.15, vol = 0.08) {
   } catch {}
 }
 
-function playStartSound()   { playTone(880, 0.12, 0.06); setTimeout(() => playTone(1320, 0.1, 0.05), 100); }
-function playDoneSound()    { playTone(1047, 0.1, 0.05); setTimeout(() => playTone(1319, 0.1, 0.05), 80); setTimeout(() => playTone(1568, 0.15, 0.05), 160); }
-function playErrorSound()   { playTone(330, 0.2, 0.06); setTimeout(() => playTone(262, 0.25, 0.06), 150); }
+function playStartSound() {
+  playTone(880, 0.10, 0.05);
+  setTimeout(() => playTone(1320, 0.08, 0.04), 80);
+}
+
+function playDoneSound() {
+  playTone(1047, 0.08, 0.05);
+  setTimeout(() => playTone(1319, 0.08, 0.05), 70);
+  setTimeout(() => playTone(1568, 0.12, 0.05), 140);
+}
+
+function playErrorSound() {
+  playTone(330, 0.18, 0.06);
+  setTimeout(() => playTone(262, 0.22, 0.06), 140);
+}
 
 // ─── Timer ────────────────────────────────────────────────────────
 
@@ -45,19 +63,36 @@ function startTimer() {
     const mins = Math.floor(elapsed / 60);
     const secs = elapsed % 60;
     timer.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
-  }, 250);
+  }, 200);
 }
 
 function stopTimer() {
-  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+// ─── App Context Badge Helper ─────────────────────────────────────
+
+function updateAppBadge(appInfo, mode) {
+  if (!appInfo) return;
+  const name = appInfo.name || 'System';
+  const icon = appInfo.icon || '✨';
+  appIcon.textContent = icon;
+  appName.textContent = name;
+  appBadge.title = `Target: ${name} (${mode || 'auto'})`;
 }
 
 // ─── State Machine ────────────────────────────────────────────────
 
 function setState(state, extra = {}) {
-  // Remove all state classes
   widget.classList.remove('state-listening', 'state-processing', 'state-done', 'state-error');
   dot.classList.remove('processing', 'done', 'error');
+
+  if (extra.active_app) {
+    updateAppBadge(extra.active_app, extra.mode);
+  }
 
   switch (state) {
     case 'listening':
@@ -71,7 +106,7 @@ function setState(state, extra = {}) {
     case 'processing':
       widget.classList.add('visible', 'state-processing');
       dot.classList.add('processing');
-      text.textContent = 'Processing…';
+      text.textContent = 'Polishing…';
       stopTimer();
       break;
 
@@ -80,6 +115,11 @@ function setState(state, extra = {}) {
       dot.classList.add('done');
       text.textContent = 'Pasted!';
       stopTimer();
+
+      const timeSec = extra.pipeline_time ? `${extra.pipeline_time}s` : '0.6s';
+      const words = extra.word_count ? ` · ${extra.word_count}w` : '';
+      speedText.textContent = `⚡ ${timeSec}${words}`;
+
       playDoneSound();
       break;
 
@@ -96,31 +136,26 @@ function setState(state, extra = {}) {
       widget.classList.remove('visible');
       stopTimer();
       timer.textContent = '0:00';
-      // Reset bars
-      bars.forEach(b => { b.style.height = '4px'; });
+      bars.forEach(b => { if (b) b.style.height = '4px'; });
       break;
   }
 }
 
-// ─── Audio Level Visualization ────────────────────────────────────
+// ─── Audio Reactive Waveform ──────────────────────────────────────
 
 function updateAudioBars(level) {
-  // level is 0..1
-  const heights = [
-    4 + level * 10,
-    4 + level * 16,
-    4 + level * 20,
-    4 + level * 14,
-    4 + level * 8,
-  ];
-  // Add some randomness for organic feel
+  // level is normalized roughly 0..1
+  const baseProfile = [0.35, 0.65, 0.95, 1.0, 0.9, 0.6, 0.3];
   bars.forEach((bar, i) => {
-    const jitter = 1 + Math.random() * 3 * level;
-    bar.style.height = `${Math.min(heights[i] + jitter, 22)}px`;
+    if (!bar) return;
+    const profile = baseProfile[i];
+    const jitter = (Math.sin(Date.now() / 60 + i) * 0.2 + 0.8);
+    const dynamicHeight = 3.5 + (level * 22 * profile * jitter);
+    bar.style.height = `${Math.max(3, Math.min(24, Math.round(dynamicHeight)))}px`;
   });
 }
 
-// ─── IPC Listeners ────────────────────────────────────────────────
+// ─── IPC Bridge Listeners ─────────────────────────────────────────
 
 window.scriber.onStateChange((data) => {
   setState(data.state, data);
