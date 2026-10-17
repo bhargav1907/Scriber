@@ -1,3 +1,4 @@
+mlx-whisper>=0.4.0
 faster-whisper>=1.1.0
 av<19
 sounddevice>=0.5.0
