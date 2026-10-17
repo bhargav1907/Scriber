@@ -178,6 +178,16 @@ function createMainWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
 
+  mainWindow.on('show', () => {
+    ipcMain.emit('fetch-audio-devices');
+    ipcMain.emit('fetch-history');
+    ipcMain.emit('request-health');
+  });
+
+  mainWindow.on('focus', () => {
+    ipcMain.emit('fetch-audio-devices');
+  });
+
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
       e.preventDefault();
@@ -318,6 +328,12 @@ function handleBackendMessage(msg) {
 
     case 'config':
       sendToAllRenderers('config-change', msg);
+      break;
+
+    case 'audio_devices_update':
+      if (msg.audio_devices) {
+        sendToAllRenderers('audio-devices-update', msg.audio_devices);
+      }
       break;
 
     default:

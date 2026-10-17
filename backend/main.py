@@ -217,9 +217,30 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[Scriber] Could not start Fn key listener: {e}")
 
+    # Background task: Monitor audio hardware changes (e.g. Bluetooth headphones connected/disconnected)
+    async def device_watcher():
+        while True:
+            await asyncio.sleep(2.0)
+            try:
+                if not state.is_recording and not state.is_processing:
+                    has_changed, devices_data = AudioRecorder.check_for_device_changes()
+                    if has_changed:
+                        print(f"[Scriber] 🎧 Audio device configuration changed: Default is now '{devices_data.get('default_name')}'")
+                        await broadcast({
+                            "type": "audio_devices_update",
+                            "audio_devices": devices_data,
+                        })
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                pass
+
+    watcher_task = asyncio.create_task(device_watcher())
+
     print("[Scriber] Backend server starting on http://127.0.0.1:58932")
     yield
     # ── Shutdown ───────────────────────────────────────────────────────
+    watcher_task.cancel()
     if fn_listener:
         fn_listener.stop()
     print("[Scriber] Backend server shutting down")
@@ -250,7 +271,7 @@ async def ws_endpoint(websocket: WebSocket):
         "state": "recording" if state.is_recording else ("processing" if state.is_processing else "idle"),
         "config": state.config,
         "whisper_ready": state.transcriber.is_ready,
-        "audio_devices": AudioRecorder.get_input_devices(),
+        "audio_devices": AudioRecorder.get_input_devices(force_refresh=True),
     })
 
     try:
@@ -260,6 +281,13 @@ async def ws_endpoint(websocket: WebSocket):
 
             if msg_type == "toggle_recording":
                 await handle_toggle()
+
+            elif msg_type == "refresh_devices":
+                devices = AudioRecorder.get_input_devices(force_refresh=True)
+                await websocket.send_json({
+                    "type": "audio_devices_update",
+                    "audio_devices": devices,
+                })
 
             elif msg_type == "get_duration":
                 await websocket.send_json({

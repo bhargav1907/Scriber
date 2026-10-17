@@ -203,12 +203,17 @@ function showToast(message) {
 
 // ─── Settings ─────────────────────────────────────────────────────
 
+let currentConfigDevice = null;
+
 function renderAudioDevices(data, selectedId = null) {
   if (!data) return;
   const devices = Array.isArray(data) ? data : (data.devices || []);
   const defaultName = (!Array.isArray(data) && data.default_name && data.default_name !== 'Unknown') ? data.default_name : '';
 
-  const currentVal = settingInputDevice.value;
+  const prevVal = (selectedId !== null && selectedId !== undefined)
+    ? String(selectedId)
+    : (currentConfigDevice !== null ? String(currentConfigDevice) : settingInputDevice.value);
+
   settingInputDevice.innerHTML = '';
 
   const optDefault = document.createElement('option');
@@ -219,17 +224,23 @@ function renderAudioDevices(data, selectedId = null) {
   settingInputDevice.appendChild(optDefault);
 
   devices.forEach((dev) => {
-    if (dev.id === null) return;
+    if (!dev || !dev.name) return;
     const opt = document.createElement('option');
-    opt.value = String(dev.id);
+    opt.value = dev.name;
+    opt.dataset.id = String(dev.id);
     opt.textContent = dev.name;
     settingInputDevice.appendChild(opt);
   });
 
-  if (selectedId !== null && selectedId !== undefined) {
-    settingInputDevice.value = String(selectedId);
-  } else if (currentVal) {
-    settingInputDevice.value = currentVal;
+  if (!prevVal || prevVal === 'null' || prevVal === 'default') {
+    settingInputDevice.value = 'default';
+  } else {
+    const match = Array.from(settingInputDevice.options).find(o => o.value === prevVal || o.dataset?.id === prevVal);
+    if (match) {
+      settingInputDevice.value = match.value;
+    } else {
+      settingInputDevice.value = 'default';
+    }
   }
 }
 
@@ -241,7 +252,18 @@ function applyConfig(config) {
   settingLLMModel.value = config.llm_model || 'llama3.2:3b';
   settingOllamaHost.value = config.ollama_host || 'http://localhost:11434';
   if (config.input_device !== undefined) {
-    settingInputDevice.value = config.input_device === null ? 'default' : String(config.input_device);
+    currentConfigDevice = config.input_device;
+    if (config.input_device === null || config.input_device === 'default') {
+      settingInputDevice.value = 'default';
+    } else {
+      const valStr = String(config.input_device);
+      const match = Array.from(settingInputDevice.options).find(o => o.value === valStr || o.dataset?.id === valStr);
+      if (match) {
+        settingInputDevice.value = match.value;
+      } else {
+        settingInputDevice.value = 'default';
+      }
+    }
   }
 }
 
@@ -251,8 +273,9 @@ function sendConfigUpdate(key, value) {
 
 settingInputDevice.addEventListener('change', () => {
   const val = settingInputDevice.value;
-  const deviceId = val === 'default' ? null : parseInt(val, 10);
-  sendConfigUpdate('input_device', deviceId);
+  const deviceVal = val === 'default' ? null : val;
+  currentConfigDevice = deviceVal;
+  sendConfigUpdate('input_device', deviceVal);
   showToast('Microphone updated');
 });
 settingWhisperModel.addEventListener('change', () => sendConfigUpdate('whisper_model', settingWhisperModel.value));
@@ -267,6 +290,17 @@ btnClearHistory.addEventListener('click', () => {
     showToast('History cleared');
   }
 });
+
+// Auto-refresh devices on user interaction
+settingInputDevice.addEventListener('focus', () => window.scriber.fetchAudioDevices());
+settingInputDevice.addEventListener('mousedown', () => window.scriber.fetchAudioDevices());
+
+// Browser hardware change listener (triggers when Bluetooth headset connects/disconnects)
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    window.scriber.fetchAudioDevices();
+  });
+}
 
 // ─── IPC Listeners ────────────────────────────────────────────────
 
@@ -308,8 +342,11 @@ window.addEventListener('DOMContentLoaded', () => {
     window.scriber.fetchHistory();
     window.scriber.fetchAudioDevices();
     window.scriber.requestHealth();
-  }, 1000);
+  }, 500);
 
-  // Poll health every 15 seconds
-  setInterval(() => window.scriber.requestHealth(), 15000);
+  // Poll health and audio devices every 5 seconds
+  setInterval(() => {
+    window.scriber.requestHealth();
+    window.scriber.fetchAudioDevices();
+  }, 5000);
 });

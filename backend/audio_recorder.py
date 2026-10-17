@@ -12,6 +12,9 @@ from config import APP_DIR
 
 
 class AudioRecorder:
+    _is_any_recording: bool = False
+    _last_devices_signature: tuple | None = None
+
     def __init__(self, sample_rate: int = 16000, channels: int = 1, device: int | str | None = None):
         self.sample_rate = sample_rate
         self.active_sample_rate = sample_rate
@@ -28,9 +31,23 @@ class AudioRecorder:
         self.device = device
         print(f"[Scriber] Audio input device set to: {device if device is not None else 'System Default'}")
 
-    @staticmethod
-    def get_input_devices() -> dict:
+    @classmethod
+    def refresh_devices(cls) -> None:
+        """Force PortAudio to re-enumerate CoreAudio devices so newly connected Bluetooth/USB devices appear."""
+        if cls._is_any_recording:
+            return
+        try:
+            sd._terminate()
+            sd._initialize()
+        except Exception as e:
+            print(f"[Scriber] Could not refresh sounddevice: {e}")
+
+    @classmethod
+    def get_input_devices(cls, force_refresh: bool = True) -> dict:
         """Return dict with available devices and currently active system default device info."""
+        if force_refresh and not cls._is_any_recording:
+            cls.refresh_devices()
+
         devices = []
         default_name = "Unknown"
         default_idx = None
@@ -61,6 +78,24 @@ class AudioRecorder:
             "default_id": default_idx,
         }
 
+    @classmethod
+    def check_for_device_changes(cls) -> tuple[bool, dict]:
+        """Check if devices or default input changed. Returns (has_changed, current_devices_dict)."""
+        if cls._is_any_recording:
+            return False, {}
+
+        info = cls.get_input_devices(force_refresh=True)
+        sig = (info.get("default_name"), tuple(d["name"] for d in info.get("devices", [])))
+        if cls._last_devices_signature is None:
+            cls._last_devices_signature = sig
+            return False, info
+
+        if sig != cls._last_devices_signature:
+            cls._last_devices_signature = sig
+            return True, info
+
+        return False, info
+
     def start(self) -> None:
         """Start recording from the microphone."""
         if self.recording:
@@ -74,8 +109,12 @@ class AudioRecorder:
                 pass
             self.stream = None
 
+        # Re-initialize sounddevice right before recording to guarantee we latch onto the active system default
+        self.refresh_devices()
+
         self.audio_chunks = []
         self.recording = True
+        AudioRecorder._is_any_recording = True
         self.start_time = time.time()
         self.active_sample_rate = self.sample_rate
 
@@ -84,7 +123,7 @@ class AudioRecorder:
         device_label = "System Default"
         dev_sr = None
 
-        if target_device is None:
+        if target_device is None or target_device == "default":
             # Query the currently active macOS system default input device in real-time
             try:
                 def_info = sd.query_devices(kind="input")
@@ -99,8 +138,16 @@ class AudioRecorder:
                 info = sd.query_devices(target_device, kind="input")
                 device_label = info.get("name", str(target_device))
                 dev_sr = int(info.get("default_samplerate", 16000))
-            except Exception:
-                pass
+                target_device = info.get("index", target_device)
+            except Exception as e:
+                print(f"[Scriber] Warning: specified device '{target_device}' not found ({e}), falling back to System Default")
+                try:
+                    def_info = sd.query_devices(kind="input")
+                    target_device = def_info.get("index", None)
+                    device_label = f"System Default ({def_info.get('name', 'Unknown')})"
+                    dev_sr = int(def_info.get("default_samplerate", 16000))
+                except Exception:
+                    target_device = None
 
         print(f"[Scriber] 🎙️ Opening microphone stream on: '{device_label}' (device_id={target_device})")
 
@@ -132,6 +179,7 @@ class AudioRecorder:
         if not opened:
             print(f"[Scriber] ❌ Failed to open microphone stream on device '{device_label}'")
             self.recording = False
+            AudioRecorder._is_any_recording = False
 
     def stop(self) -> tuple[str | None, float]:
         """Stop recording. Returns (filepath, duration_seconds)."""
@@ -139,6 +187,7 @@ class AudioRecorder:
             return None, 0.0
 
         self.recording = False
+        AudioRecorder._is_any_recording = False
         duration = time.time() - self.start_time if self.start_time else 0
 
         if self.stream:
