@@ -353,11 +353,15 @@ async def ws_endpoint(websocket: WebSocket):
     state.websocket_clients.add(websocket)
 
     # Send the current state + config on connect
+    app_info = get_frontmost_app()
+    state.current_app = app_info
     await websocket.send_json({
         "type": "init",
         "state": "recording" if state.is_recording else ("processing" if state.is_processing else "idle"),
         "config": state.config,
         "whisper_ready": state.transcriber.is_ready,
+        "active_app": app_info,
+        "mode": state.current_mode,
         "audio_devices": AudioRecorder.get_input_devices(force_refresh=True),
         "stats": get_stats(),
     })

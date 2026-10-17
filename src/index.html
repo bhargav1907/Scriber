@@ -36,6 +36,7 @@
         <div class="mode-pill-container" title="Current Dictation Mode">
           <select id="quickModeSelect" class="mode-select-pill">
             <option value="auto">✨ Auto Context</option>
+            <option value="browser">🌐 Browser</option>
             <option value="general">💬 General</option>
             <option value="code">💻 Code</option>
             <option value="email">✉️ Email</option>
@@ -151,7 +152,8 @@
               <span class="setting-desc">Smart context detection adjusts tone for the active app</span>
             </div>
             <select class="setting-select" id="settingDictationMode">
-              <option value="auto">Auto (Detects VS Code, Mail, Slack, Notion, etc.)</option>
+              <option value="auto">Auto (Detects Browsers, VS Code, Mail, Slack, Notes, etc.)</option>
+              <option value="browser">Browser & Web (Search, web apps, forms)</option>
               <option value="general">General (Natural speech cleanup)</option>
               <option value="code">Code & Developer (Code identifiers, commit messages)</option>
               <option value="email">Email & Business (Polite, structured paragraphs)</option>

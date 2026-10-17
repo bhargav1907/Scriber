@@ -192,6 +192,17 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.app-badge.badge-updated {
+  animation: badgePop 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes badgePop {
+  0% { transform: scale(0.92); opacity: 0.6; }
+  50% { transform: scale(1.06); }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .app-icon {

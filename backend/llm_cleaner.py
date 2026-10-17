@@ -10,6 +10,7 @@ import httpx
 
 MODE_INSTRUCTIONS = {
     "general": "Fix punctuation, capitalization, remove filler words (um, uh, like, you know, basically, actually), and keep natural speech flow.",
+    "browser": "Fix punctuation, capitalization, remove filler words, preserve search queries, URLs, and web form inputs naturally, and keep speech clear and direct.",
     "code": "Fix punctuation, remove filler words, and format technical terms or variable names in camelCase, snake_case, or backticks where appropriate while keeping the spoken sentence intact. Do NOT convert sentences into code blocks.",
     "email": "Format into clean, professional email sentences with proper punctuation and business tone without adding fake sign-offs or placeholders.",
     "notes": "Format into clean, structured notes with proper punctuation.",

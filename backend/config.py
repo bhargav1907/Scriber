@@ -18,7 +18,7 @@ DEFAULT_CONFIG = {
     "auto_paste": True,
     "sound_effects": True,
     "input_device": None,
-    "dictation_mode": "auto",  # auto, general, email, code, notes, raw
+    "dictation_mode": "auto",  # auto, browser, general, email, code, notes, chat, raw
     "custom_vocabulary": ["Scriber", "Bhargav", "Kivi", "Ollama", "Whisper", "Apple Silicon", "MLX"],
     "word_replacements": {"btw": "by the way", "lgtm": "Looks good to me!"},
     "audio_ducking": False,

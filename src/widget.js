@@ -73,12 +73,20 @@ function stopTimer() {
   }
 }
 
-// ─── App Context Badge Helper ─────────────────────────────────────
+let lastAppName = '';
 
 function updateAppBadge(appInfo, mode) {
   if (!appInfo) return;
   const name = appInfo.name || 'System';
   const icon = appInfo.icon || '✨';
+
+  if (name !== lastAppName) {
+    lastAppName = name;
+    appBadge.classList.remove('badge-updated');
+    void appBadge.offsetWidth;
+    appBadge.classList.add('badge-updated');
+  }
+
   appIcon.textContent = icon;
   appName.textContent = name;
   appBadge.title = `Target: ${name} (${mode || 'auto'})`;
