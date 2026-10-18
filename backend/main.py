@@ -157,8 +157,7 @@ async def stop_recording():
     })
     print("[Scriber] ⏳ Processing …")
 
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, _process_pipeline)
+    asyncio.create_task(_process_pipeline())
 
 
 async def handle_toggle():
@@ -179,23 +178,25 @@ async def handle_fn_action(action: str):
         await handle_toggle()
 
 
-def _process_pipeline():
-    """Runs in a background thread: transcribe → cleanup → paste → save."""
+async def _process_pipeline():
+    """Asynchronous pipeline: transcribe (in thread pool) → LLM cleanup → native paste → save."""
     try:
-        audio_path, duration = state.recorder.stop()
+        # 1. Stop recorder and get in-memory float32 audio
+        audio_np, duration, audio_path = state.recorder.stop()
 
-        if not audio_path:
-            broadcast_from_thread({"type": "state", "state": "error", "message": "No audio captured"})
-            time.sleep(2.0)
-            broadcast_from_thread({"type": "state", "state": "idle"})
+        if audio_np is None or audio_np.size == 0:
+            await broadcast({"type": "state", "state": "error", "message": "No audio captured"})
+            await asyncio.sleep(2.0)
+            await broadcast({"type": "state", "state": "idle"})
             return
 
         t_pipeline_start = time.time()
 
-        # 1. Transcribe audio acoustically (without prompt injection to prevent hallucination loops)
+        # 2. Transcribe audio acoustically in worker thread pool (MLX Metal GPU / faster-whisper)
         t_w0 = time.time()
         custom_vocab = state.config.get("custom_vocabulary", [])
-        raw_text = state.transcriber.transcribe(audio_path)
+        loop = asyncio.get_running_loop()
+        raw_text = await loop.run_in_executor(None, state.transcriber.transcribe, audio_np)
         t_whisper = time.time() - t_w0
 
         # Anti-hallucination guard 1: If raw text is just an echoing of the custom vocabulary list, discard it
@@ -220,28 +221,24 @@ def _process_pipeline():
             raw_text = ""
 
         if not raw_text or not raw_text.strip():
-            broadcast_from_thread({"type": "state", "state": "error", "message": "No speech detected"})
-            time.sleep(2.0)
-            broadcast_from_thread({"type": "state", "state": "idle"})
+            await broadcast({"type": "state", "state": "error", "message": "No speech detected"})
+            await asyncio.sleep(2.0)
+            await broadcast({"type": "state", "state": "idle"})
             return
 
-        # 2. LLM cleanup with app mode context & word replacements
+        # 3. LLM cleanup with app mode context & word replacements (native async on main loop)
         cleaned_text = raw_text
         t_llm = 0.0
         word_reps = state.config.get("word_replacements", {})
         if state.config.get("llm_cleanup_enabled", True) and state.current_mode != "raw":
             t_l0 = time.time()
             try:
-                loop = asyncio.new_event_loop()
-                cleaned_text = loop.run_until_complete(
-                    state.cleaner.cleanup(
-                        raw_text,
-                        mode=state.current_mode,
-                        custom_vocabulary=custom_vocab,
-                        word_replacements=word_reps,
-                    )
+                cleaned_text = await state.cleaner.cleanup(
+                    raw_text,
+                    mode=state.current_mode,
+                    custom_vocabulary=custom_vocab,
+                    word_replacements=word_reps,
                 )
-                loop.close()
             except Exception as e:
                 print(f"[Scriber] LLM cleanup error (using raw text): {e}")
                 cleaned_text = state.cleaner._apply_replacements(raw_text, word_reps)
@@ -249,19 +246,18 @@ def _process_pipeline():
         else:
             cleaned_text = state.cleaner._apply_replacements(raw_text, word_reps)
 
-        # 3. Paste into the active app
+        # 4. Instant native paste into active app (sub-millisecond AppKit + Quartz with clipboard restore)
         if state.config.get("auto_paste", True):
-            time.sleep(0.05)  # Brief pause so the OS can settle
             paste_text(cleaned_text)
 
-        # 4. Save to history
+        # 5. Save to history
         save_transcription(raw_text, cleaned_text, duration, state.config.get("whisper_model", "base"))
 
         t_total = time.time() - t_pipeline_start
         word_count = len(cleaned_text.split())
 
-        # 5. Broadcast success
-        broadcast_from_thread({
+        # 6. Broadcast success
+        await broadcast({
             "type": "state",
             "state": "done",
             "raw_text": raw_text,
@@ -274,14 +270,14 @@ def _process_pipeline():
         })
         print(f"[Scriber] ⚡ Processed in {t_total:.2f}s (STT: {t_whisper:.2f}s, LLM: {t_llm:.2f}s) → \"{cleaned_text[:60]}\"")
 
-        time.sleep(2.0)
-        broadcast_from_thread({"type": "state", "state": "idle"})
+        await asyncio.sleep(2.0)
+        await broadcast({"type": "state", "state": "idle"})
 
     except Exception as e:
         print(f"[Scriber] ❌ Pipeline error: {e}")
-        broadcast_from_thread({"type": "state", "state": "error", "message": str(e)})
-        time.sleep(3.0)
-        broadcast_from_thread({"type": "state", "state": "idle"})
+        await broadcast({"type": "state", "state": "error", "message": str(e)})
+        await asyncio.sleep(3.0)
+        await broadcast({"type": "state", "state": "idle"})
     finally:
         state.is_processing = False
         if state.config.get("audio_ducking", False):
@@ -343,6 +339,7 @@ async def lifespan(app: FastAPI):
     watcher_task.cancel()
     if fn_listener:
         fn_listener.stop()
+    await state.cleaner.aclose()
     print("[Scriber] Backend server shutting down")
 
 

@@ -187,10 +187,10 @@ class AudioRecorder:
             AudioRecorder._is_any_recording = True
             return True
 
-    def stop(self) -> tuple[str | None, float]:
-        """Stop recording. Returns (filepath, duration_seconds)."""
+    def stop(self) -> tuple[np.ndarray | None, float, str | None]:
+        """Stop recording. Returns (audio_np, duration_seconds, filepath)."""
         if not self.recording and not self.stream:
-            return None, 0.0
+            return None, 0.0, None
 
         self.recording = False
         AudioRecorder._is_any_recording = False
@@ -204,8 +204,8 @@ class AudioRecorder:
                 pass
             self.stream = None
 
-        filepath = self._save_audio()
-        return filepath, duration
+        audio_np, filepath = self._process_audio()
+        return audio_np, duration, filepath
 
     def get_duration(self) -> float:
         """Get current recording duration in seconds."""
@@ -226,12 +226,13 @@ class AudioRecorder:
             level = min(rms * 8.0, 1.0)
             self.level_callback(level)
 
-    def _save_audio(self) -> str | None:
-        """Concatenate recorded chunks, resample if needed, and save as 16kHz WAV."""
+    def _process_audio(self) -> tuple[np.ndarray | None, str | None]:
+        """Concatenate recorded chunks, resample to 16kHz, filter, normalize, and asynchronously persist WAV."""
         if not self.audio_chunks:
-            return None
+            return None, None
 
         audio = np.concatenate(self.audio_chunks, axis=0).flatten()
+        self.audio_chunks = []
 
         # 1. Resample to 16 kHz if recorded at a different rate
         if self.active_sample_rate != self.sample_rate and len(audio) > 0:
@@ -263,15 +264,24 @@ class AudioRecorder:
             print(f"[Scriber] 🎚️ Audio cleaned & normalized (peak: {max_val:.3f} → {np.max(np.abs(audio)):.3f}, gain: {gain:.2f}x)")
 
         filepath = APP_DIR / "last_recording.wav"
-        filepath.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert float32 [-1, 1] to int16
-        audio_int16 = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+        # 5. Non-blocking asynchronous WAV save in a background daemon thread
+        def _save_wav_async(audio_data: np.ndarray, path, channels: int, rate: int):
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                audio_int16 = (np.clip(audio_data, -1.0, 1.0) * 32767).astype(np.int16)
+                with wave.open(str(path), "w") as wf:
+                    wf.setnchannels(channels)
+                    wf.setsampwidth(2)  # 16-bit
+                    wf.setframerate(rate)
+                    wf.writeframes(audio_int16.tobytes())
+            except Exception as ex:
+                print(f"[Scriber] Async WAV save error: {ex}")
 
-        with wave.open(str(filepath), "w") as wf:
-            wf.setnchannels(self.channels)
-            wf.setsampwidth(2)  # 16-bit
-            wf.setframerate(self.sample_rate)
-            wf.writeframes(audio_int16.tobytes())
+        threading.Thread(
+            target=_save_wav_async,
+            args=(audio.copy(), filepath, self.channels, self.sample_rate),
+            daemon=True,
+        ).start()
 
-        return str(filepath)
+        return audio, str(filepath)

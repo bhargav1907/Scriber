@@ -22,6 +22,19 @@ class LLMCleaner:
     def __init__(self, model: str = "llama3.2:3b", host: str = "http://localhost:11434"):
         self.model = model
         self.host = host.rstrip("/")
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Reuse persistent HTTP client for sub-millisecond connection reuse and HTTP keep-alive."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=15.0)
+        return self._client
+
+    async def aclose(self):
+        """Close persistent HTTP client on shutdown."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     async def cleanup(
         self,
@@ -67,39 +80,39 @@ class LLMCleaner:
 
         max_tokens = max(int(len(input_text.split()) * 2) + 40, 70)
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client:
-                response = await client.post(
-                    f"{self.host}/api/chat",
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "stream": False,
-                        "keep_alive": "24h",
-                        "options": {
-                            "temperature": 0.0,
-                            "num_predict": max_tokens,
-                        },
+            client = self._get_client()
+            response = await client.post(
+                f"{self.host}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": False,
+                    "keep_alive": "24h",
+                    "options": {
+                        "temperature": 0.0,
+                        "num_predict": max_tokens,
                     },
-                )
-                response.raise_for_status()
-                result = response.json()
-                cleaned = result.get("message", {}).get("content", raw_text).strip()
+                },
+            )
+            response.raise_for_status()
+            result = response.json()
+            cleaned = result.get("message", {}).get("content", raw_text).strip()
 
-                final_text = self._sanitize_llm_output(cleaned, raw_text)
-                return self._apply_replacements(final_text, word_replacements)
+            final_text = self._sanitize_llm_output(cleaned, raw_text)
+            return self._apply_replacements(final_text, word_replacements)
 
         except Exception as e:
             print(f"[Scriber] LLM cleanup failed (falling back to raw text): {e}")
             return self._apply_replacements(raw_text, word_replacements)
 
     def _sanitize_llm_output(self, cleaned: str, raw_text: str) -> str:
-        """Sanitize LLM output and guard against prompt echoing or hallucination."""
+        """Sanitize LLM output and guard against prompt echoing, conversational filler, or instruction lists."""
         if not cleaned or not cleaned.strip():
             return raw_text
 
         # Strip conversational preamble (e.g. "Here is the cleaned text:", "I'd be happy to...")
         cleaned = re.sub(
-            r"^(?:I(?:'d| would) be happy to[^\n]*\n*|Here(?:'s| is) (?:the )?(?:cleaned )?(?:text|transcription|response):?\s*|Cleaned text:\s*|Sure[!,.]?\s*)",
+            r"^(?:I(?:'d| would) be happy to[^\n]*\n*|Here(?:'s| is) (?:the )?(?:cleaned )?(?:text|transcription|response|result):?\s*\n*|Cleaned text:\s*|Sure[!,.]?\s*)",
             "",
             cleaned.strip(),
             flags=re.IGNORECASE,
@@ -110,8 +123,14 @@ class LLMCleaner:
             if (cleaned[0] == '"' and cleaned[-1] == '"') or (cleaned[0] == "'" and cleaned[-1] == "'"):
                 cleaned = cleaned[1:-1].strip()
 
-        # Hallucination / prompt-echo guard: if output contains system instruction terms
         lower = cleaned.lower()
+
+        # Instruction list echo guard: if model output a numbered bulleted list when input had no list
+        if re.search(r"(?:^|\n)\s*1\.\s+.*(?:\n\s*2\.\s+.*)+", cleaned) and "1." not in raw_text:
+            print(f"[Scriber] ⚠️ Warning: LLM output contained numbered instruction list. Discarding and using raw text.")
+            return raw_text
+
+        # Hallucination / prompt-echo guard: if output contains system instruction terms
         guard_terms = [
             "automated speech",
             "clean up the user",
@@ -120,15 +139,19 @@ class LLMCleaner:
             "format variable names",
             "remove filler words",
             "cleaned developer text",
+            "spoken dictation",
+            "speech stumbles",
+            "here's the cleaned text",
+            "here is the cleaned text",
         ]
         if any(gt in lower for gt in guard_terms):
-            print(f"[Scriber] Warning: LLM output contained prompt guard words. Falling back to raw text.")
+            print(f"[Scriber] ⚠️ Warning: LLM output contained prompt guard words. Falling back to raw text.")
             return raw_text
 
         # Length guard: if output exploded to >3.5x input length
         raw_words = len(raw_text.split())
         if raw_words > 0 and len(cleaned.split()) > max(raw_words * 3.5, 25):
-            print(f"[Scriber] Warning: LLM output exceeded length guard. Falling back to raw text.")
+            print(f"[Scriber] ⚠️ Warning: LLM output exceeded length guard. Falling back to raw text.")
             return raw_text
 
         return cleaned if cleaned else raw_text
@@ -148,8 +171,8 @@ class LLMCleaner:
     async def check_connection(self) -> bool:
         """Check if Ollama is running and reachable."""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.host}/api/tags")
-                return response.status_code == 200
+            client = self._get_client()
+            response = await client.get(f"{self.host}/api/tags")
+            return response.status_code == 200
         except Exception:
             return False

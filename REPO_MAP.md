@@ -23,11 +23,12 @@
     - `def stop(self)`
     - `def get_duration(self)`
     - `def _audio_callback(self, indata, frames, time_info, status)`
-    - `def _save_audio(self)`
+    - `def _process_audio(self)`
 
 ### `backend/clipboard.py`
-  > Scriber — Clipboard & Paste
-  - `def paste_text(text)`
+  > Scriber — High-Performance Native macOS Clipboard & Paste
+  - `def _restore_clipboard_string(prev_text)`
+  - `def paste_text(text, restore_previous, restore_delay)`
 
 ### `backend/config.py`
   > Scriber — Configuration Management
@@ -60,6 +61,8 @@
   > Scriber — LLM Text Cleanup via Ollama
   - **class `LLMCleaner`**
     - `def __init__(self, model, host)`
+    - `def _get_client(self)`
+    - `async def aclose(self)`
     - `async def cleanup(self, raw_text, mode, custom_vocabulary, word_replacements)`
     - `def _sanitize_llm_output(self, cleaned, raw_text)`
     - `def _apply_replacements(self, text, replacements)`
@@ -75,7 +78,7 @@
   - `async def stop_recording()`
   - `async def handle_toggle()`
   - `async def handle_fn_action(action)`
-  - `def _process_pipeline()`
+  - `async def _process_pipeline()`
   - `async def lifespan(app)`
   - `async def ws_endpoint(websocket)` [@app.websocket]
   - `async def health()` [@app.get]
@@ -93,7 +96,7 @@
     - `def __init__(self, model_size)`
     - `def is_ready(self)`
     - `def load_model(self, model_size)`
-    - `def transcribe(self, audio_path)`
+    - `def transcribe(self, audio_source)`
 
 ## ⚡ Electron & Frontend (`main.js`, `preload.js`, `src/`)
 

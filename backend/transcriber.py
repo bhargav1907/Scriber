@@ -116,34 +116,44 @@ class Transcriber:
         finally:
             self._loading = False
 
-    def transcribe(self, audio_path: str) -> str:
+    def transcribe(self, audio_source: str | np.ndarray) -> str:
         """
-        Transcribe an audio file to text using Metal GPU or greedy CPU search.
+        Transcribe an in-memory numpy float32 array or audio WAV file path to text
+        using Apple Silicon Metal GPU (MLX) or greedy CPU search.
         Transcribes strictly the spoken acoustic signal without prompt hallucination.
         """
         if not self.is_ready:
             self.load_model()
 
         with self._lock:
-            # 1. Apple Silicon MLX Metal GPU path (~0.4 - 0.7s)
+            # 1. Resolve audio source to float32 numpy array
+            if isinstance(audio_source, np.ndarray):
+                audio_np = audio_source.astype(np.float32)
+            elif isinstance(audio_source, str):
+                try:
+                    with wave.open(audio_source, "rb") as wf:
+                        frames = wf.readframes(wf.getnframes())
+                        audio_np = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+                except Exception as e:
+                    print(f"[Scriber] Could not read audio file '{audio_source}': {e}")
+                    return ""
+            else:
+                return ""
+
+            if audio_np.size == 0:
+                return ""
+
+            # Energy gate: check if audio is near-silence / ambient floor
+            max_amp = float(np.max(np.abs(audio_np)))
+            rms = float(np.sqrt(np.mean(audio_np ** 2)))
+            if max_amp < 0.015 or rms < 0.003:
+                print(f"[Scriber] 🔇 Audio signal below voice threshold (max_amp={max_amp:.4f}, rms={rms:.4f}), skipping.")
+                return ""
+
+            # 2. Apple Silicon MLX Metal GPU path (~0.4 - 0.7s)
             if self._use_mlx and self.model_size in MLX_MODEL_MAP:
                 repo = MLX_MODEL_MAP[self.model_size]
                 try:
-                    # Read PCM directly with Python wave (no external ffmpeg binary needed)
-                    with wave.open(audio_path, "rb") as wf:
-                        frames = wf.readframes(wf.getnframes())
-                        audio_np = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-
-                    if audio_np.size == 0:
-                        return ""
-
-                    # Energy gate: check if audio is near-silence / ambient floor
-                    max_amp = float(np.max(np.abs(audio_np)))
-                    rms = float(np.sqrt(np.mean(audio_np ** 2)))
-                    if max_amp < 0.015 or rms < 0.003:
-                        print(f"[Scriber] 🔇 Audio signal below voice threshold (max_amp={max_amp:.4f}, rms={rms:.4f}), skipping.")
-                        return ""
-
                     res = mlx_whisper.transcribe(
                         audio_np,
                         path_or_hf_repo=repo,
@@ -170,10 +180,10 @@ class Transcriber:
                 except Exception as e:
                     print(f"[Scriber] MLX transcription warning ({e}), falling back to CPU...")
 
-            # 2. faster-whisper CPU fallback
+            # 3. faster-whisper CPU fallback
             if self.model:
                 segments, _ = self.model.transcribe(
-                    audio_path,
+                    audio_np,
                     language="en",
                     beam_size=1,
                     best_of=1,
