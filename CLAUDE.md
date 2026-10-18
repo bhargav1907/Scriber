@@ -7,3 +7,4 @@ Refer to [`AGENTS.md`](./AGENTS.md) for full architectural guidelines, navigatio
 2. **Update Map on Signature Changes**: Run `npm run map` after adding or modifying functions, endpoints, or IPC bridges.
 3. **Use LSP if available**: Use definition/reference tools rather than regex search.
 4. **Local & Private**: Everything runs locally on Apple Silicon (MLX Metal GPU Whisper + Ollama). Never add cloud telemetry or external logging.
+5. **Keep `README.md` Synchronized**: Update `README.md` whenever significant architectural, security, performance, or UI improvements occur.

@@ -35,25 +35,26 @@ If the environment has an active Language Server Protocol (LSP) tool or MCP serv
         ▼ (sounddevice PCM stream)
 [ AudioRecorder (backend/audio_recorder.py) ]
         │
-        ▼ (.wav temp file)
+        ▼ (in-memory float32 numpy array — zero disk round-trip)
 [ Transcriber (backend/transcriber.py) ] ──▶ Apple Silicon Metal GPU (mlx-whisper large-v3-turbo, ~0.6s)
         │
         ▼ (raw acoustic transcript)
-[ LLMCleaner (backend/llm_cleaner.py) ] ──▶ Ollama /api/chat (llama3.2:3b with mode context & few-shot guards)
+[ LLMCleaner (backend/llm_cleaner.py) ] ──▶ Ollama /api/chat (persistent keep-alive connection reuse)
         │
         ▼ (polished text)
-[ Clipboard (backend/clipboard.py) ] ────▶ macOS osascript Cmd+V paste into frontmost app
+[ Clipboard (backend/clipboard.py) ] ────▶ Native AppKit & Quartz CGEventPost Cmd+V (<0.5ms) + restore
         │
         ▼ (WebSocket status & level events)
 [ Electron Main (main.js) ] ──────────────▶ IPC bridge (preload.js) ──▶ Renderers (src/widget.js & src/renderer.js)
 ```
 
 ### Key Technical Invariants
-1. **Physical `Fn` Key Swallowing**:
+1. **Physical `Fn` Key Swallowing & Auto-Recovery**:
    - Managed in [`backend/fn_listener.py`](file:///Users/bhargavsinguluri/Documents/Scriber/backend/fn_listener.py) using a Quartz `kCGHIDEventTap` intercepting keycode 63.
    - Must swallow the event (`return None`) to prevent the macOS emoji picker popup.
+   - Automatically recovers on sleep/wake timeouts via `kCGEventTapDisabledByTimeout` re-enabling.
 2. **Context-Aware App Detection**:
-   - Managed in [`backend/context_detector.py`](file:///Users/bhargavsinguluri/Documents/Scriber/backend/context_detector.py) using reverse-DNS **Bundle Identifiers** (`com.brave.Browser`, `com.google.antigravity-ide`, `com.microsoft.VSCode`, etc.).
+   - Managed in [`backend/context_detector.py`](file:///Users/bhargavsinguluri/Documents/Scriber/backend/context_detector.py) using in-process `NSWorkspace` (<1ms) and reverse-DNS **Bundle Identifiers** (`com.brave.Browser`, `com.google.antigravity-ide`, `com.microsoft.VSCode`, etc.).
    - Distinguishes Scriber's own Electron process from external Electron apps (like Antigravity IDE or VS Code).
 3. **Silence Hallucination Guards**:
    - Managed in [`backend/transcriber.py`](file:///Users/bhargavsinguluri/Documents/Scriber/backend/transcriber.py) with RMS acoustic energy gate (`rms < 0.003`) and silence phrase filter (`"Thank you."`, `"[Music]"`).
@@ -83,3 +84,5 @@ backend/venv/bin/python3 -c "import mlx_whisper; print('MLX ready')"
 ## 📝 5. Development Conventions
 - **No telemetry, 100% local**: No cloud APIs, no analytics, no external tracking.
 - **Git commits**: Always commit clean, descriptive atomic changes with conventional commit prefixes (`feat:`, `fix:`, `refactor:`, `docs:`).
+- **Keep `README.md` Synchronized**: Whenever a significant feature, optimization, architecture upgrade, or security change is introduced, inspect [`README.md`](./README.md) and update it to clearly showcase the new capability, metrics, shortcuts, and architecture.
+
