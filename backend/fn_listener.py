@@ -23,6 +23,9 @@ from Quartz import (
     kCFRunLoopCommonModes,
     CFRunLoopRun,
     CFRunLoopStop,
+    kCGEventTapDisabledByTimeout,
+    kCGEventTapDisabledByUserInput,
+    CGEventTapEnable,
 )
 
 FN_KEYCODE = 63
@@ -36,6 +39,7 @@ class FnKeyListener:
         self.run_loop = None
         self.last_press = 0.0
         self.is_running = False
+        self._tap = None
 
     def start(self):
         self.is_running = True
@@ -44,6 +48,12 @@ class FnKeyListener:
 
     def _run(self):
         def event_callback(proxy, event_type, event, refcon):
+            # Auto-recover tap if disabled by macOS sleep or system timeout
+            if event_type in (kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput):
+                if self._tap:
+                    CGEventTapEnable(self._tap, True)
+                return event
+
             try:
                 keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
                 if keycode == FN_KEYCODE:
@@ -65,7 +75,7 @@ class FnKeyListener:
                 print(f"[Scriber] Fn key listener error: {e}")
             return event
 
-        tap = CGEventTapCreate(
+        self._tap = CGEventTapCreate(
             kCGHIDEventTap,
             kCGHeadInsertEventTap,
             kCGEventTapOptionDefault,
@@ -74,11 +84,11 @@ class FnKeyListener:
             None,
         )
 
-        if not tap:
+        if not self._tap:
             print("[Scriber] ⚠️ Could not create HID CGEventTap for Fn key. Ensure Accessibility permission is granted.")
             return
 
-        source = CFMachPortCreateRunLoopSource(None, tap, 0)
+        source = CFMachPortCreateRunLoopSource(None, self._tap, 0)
         self.run_loop = CFRunLoopGetCurrent()
         CFRunLoopAddSource(self.run_loop, source, kCFRunLoopCommonModes)
         print("[Scriber] 🌐 Fn key listener active (Tap Fn to record → Tap Fn to paste)")
@@ -86,5 +96,9 @@ class FnKeyListener:
 
     def stop(self):
         self.is_running = False
+        if self._tap:
+            CGEventTapEnable(self._tap, False)
+            self._tap = None
         if self.run_loop:
             CFRunLoopStop(self.run_loop)
+

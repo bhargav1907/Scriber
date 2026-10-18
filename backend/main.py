@@ -345,12 +345,38 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# ---------------------------------------------------------------------------
+# Security & Config Validation
+# ---------------------------------------------------------------------------
+
+ALLOWED_ORIGINS = [
+    "http://127.0.0.1",
+    "http://localhost",
+    "http://127.0.0.1:58932",
+    "http://localhost:58932",
+    "null",  # Electron file:// protocol renderer
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
+ALLOWED_CONFIG_TYPES = {
+    "whisper_model": (str,),
+    "llm_model": (str,),
+    "ollama_host": (str,),
+    "dictation_mode": (str,),
+    "input_device": (str, int, type(None)),
+    "audio_ducking": (bool,),
+    "llm_cleanup_enabled": (bool,),
+    "auto_paste": (bool,),
+    "custom_vocabulary": (list,),
+    "word_replacements": (dict,),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -434,12 +460,15 @@ async def api_audio_devices():
 
 @app.get("/api/history")
 async def api_history(limit: int = 100, offset: int = 0):
-    return get_history(limit, offset)
+    safe_limit = max(1, min(limit, 500))
+    safe_offset = max(0, offset)
+    return get_history(safe_limit, safe_offset)
 
 
 @app.delete("/api/history/{row_id}")
 async def api_delete(row_id: int):
-    delete_transcription(row_id)
+    if row_id > 0:
+        delete_transcription(row_id)
     return {"status": "deleted"}
 
 
@@ -456,22 +485,30 @@ async def api_get_config():
 
 @app.post("/api/config")
 async def api_update_config(body: dict):
-    state.config.update(body)
+    # Sanitize and validate inputs against strict whitelist
+    sanitized = {}
+    for key, val in body.items():
+        if key in ALLOWED_CONFIG_TYPES:
+            expected_types = ALLOWED_CONFIG_TYPES[key]
+            if isinstance(val, expected_types):
+                sanitized[key] = val
+
+    state.config.update(sanitized)
     save_config(state.config)
 
     # Hot-reload affected components
-    if "whisper_model" in body:
+    if "whisper_model" in sanitized:
         threading.Thread(
             target=state.transcriber.load_model,
-            args=(body["whisper_model"],),
+            args=(sanitized["whisper_model"],),
             daemon=True,
         ).start()
-    if "llm_model" in body:
-        state.cleaner.model = body["llm_model"]
-    if "ollama_host" in body:
-        state.cleaner.host = body["ollama_host"]
-    if "input_device" in body:
-        state.recorder.set_device(body["input_device"])
+    if "llm_model" in sanitized:
+        state.cleaner.model = sanitized["llm_model"]
+    if "ollama_host" in sanitized:
+        state.cleaner.host = sanitized["ollama_host"]
+    if "input_device" in sanitized:
+        state.recorder.set_device(sanitized["input_device"])
 
     await broadcast({"type": "config", "config": state.config})
     return state.config

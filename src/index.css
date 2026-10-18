@@ -37,7 +37,8 @@
   --shadow:         0 4px 24px rgba(0, 0, 0, 0.3);
   --shadow-lg:      0 8px 40px rgba(0, 0, 0, 0.4);
 
-  --font:           'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  --font:           -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter', 'Helvetica Neue', sans-serif;
+  --font-mono:      'SF Mono', 'JetBrains Mono', Menlo, Monaco, Courier, monospace;
 }
 
 *, *::before, *::after {
@@ -83,10 +84,66 @@ html, body {
 
 .header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   padding: 4px 28px 16px;
   -webkit-app-region: no-drag;
+}
+
+/* ── Apple Segmented Tab Switcher (macOS HIG) ─────────────────────── */
+
+.nav-segment {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  padding: 2px;
+  gap: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2) inset;
+}
+
+.nav-segment-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.nav-segment-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-segment-btn.active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  font-weight: 600;
+}
+
+.nav-kbd {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-segment-btn.active .nav-kbd {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.4);
 }
 
 .header-left {

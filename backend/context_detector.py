@@ -101,34 +101,23 @@ APP_ICONS = {
 def get_frontmost_app() -> dict:
     """
     Detect the active frontmost macOS application.
-    Prioritizes bundle identifier lookup, with fallbacks for unknown or custom apps.
+    Prioritizes ultra-fast in-process NSWorkspace (<1ms) and Quartz window layer inspection,
+    with graceful fallback to System Events AppleScript if needed.
     """
     bid = ""
     raw_name = ""
 
-    # Priority 1: Real-time System Events query (returns bundle identifier of frontmost process)
+    # Priority 1: In-process NSWorkspace query (~0.7ms, zero subprocess overhead)
     try:
-        cmd = 'tell application "System Events" to return (bundle identifier of first application process whose frontmost is true) & "|||" & (name of first application process whose frontmost is true)'
-        res = subprocess.run(["osascript", "-e", cmd], capture_output=True, text=True, timeout=0.4)
-        if res.returncode == 0 and res.stdout.strip():
-            parts = res.stdout.strip().split("|||")
-            bid = parts[0].strip() if len(parts) > 0 else ""
-            raw_name = parts[1].strip() if len(parts) > 1 else ""
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if app:
+            bid = (app.bundleIdentifier() or "").strip()
+            raw_name = (app.localizedName() or "").strip()
     except Exception:
         pass
 
-    # Priority 2: NSWorkspace fallback
-    if not bid:
-        try:
-            app = NSWorkspace.sharedWorkspace().frontmostApplication()
-            if app:
-                bid = (app.bundleIdentifier() or "").strip()
-                raw_name = (app.localizedName() or "").strip()
-        except Exception:
-            pass
-
     # If the front process is Scriber itself, look behind it to find the real target app
-    if bid in {"com.github.Electron", "com.scriber.app"}:
+    if bid in {"com.github.Electron", "com.scriber.app", "Scriber"}:
         try:
             windows = Quartz.CGWindowListCopyWindowInfo(
                 Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
@@ -144,6 +133,18 @@ def get_frontmost_app() -> dict:
                     raw_name = owner
                     bid = ""
                     break
+        except Exception:
+            pass
+
+    # Priority 2: Fallback to System Events only if NSWorkspace was unable to resolve
+    if not bid and not raw_name:
+        try:
+            cmd = 'tell application "System Events" to return (bundle identifier of first application process whose frontmost is true) & "|||" & (name of first application process whose frontmost is true)'
+            res = subprocess.run(["osascript", "-e", cmd], capture_output=True, text=True, timeout=0.3)
+            if res.returncode == 0 and res.stdout.strip():
+                parts = res.stdout.strip().split("|||")
+                bid = parts[0].strip() if len(parts) > 0 else ""
+                raw_name = parts[1].strip() if len(parts) > 1 else ""
         except Exception:
             pass
 

@@ -39,6 +39,21 @@ const BACKEND_PORT = 58932;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 const WS_URL = `ws://127.0.0.1:${BACKEND_PORT}/ws`;
 
+// ─── Single Instance Guard ───────────────────────────────────────────
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  console.log('[Scriber] Another instance is already running. Exiting.');
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
+
 // ─── PNG Icon Generator ──────────────────────────────────────────────
 // Creates simple tray icons programmatically (no external files needed)
 
@@ -129,6 +144,24 @@ function updateTrayIcon(state) {
 
 // ─── Window Creation ─────────────────────────────────────────────────
 
+function secureWebContents(win) {
+  if (!win || !win.webContents) return;
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https:') || url.startsWith('http:')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) {
+      event.preventDefault();
+      if (url.startsWith('https:') || url.startsWith('http:')) {
+        shell.openExternal(url);
+      }
+    }
+  });
+}
+
 function createWidgetWindow() {
   const display = screen.getPrimaryDisplay();
   const { width: screenW } = display.workAreaSize;
@@ -146,6 +179,7 @@ function createWidgetWindow() {
     hasShadow: false,
     focusable: false,
     show: false,
+    hiddenInMissionControl: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -156,6 +190,7 @@ function createWidgetWindow() {
   widgetWindow.loadFile(path.join(__dirname, 'src', 'widget.html'));
   widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   widgetWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+  secureWebContents(widgetWindow);
 }
 
 function showWidget() {
@@ -187,14 +222,16 @@ function hideWidget() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 680,
-    minWidth: 640,
-    minHeight: 480,
+    width: 940,
+    height: 700,
+    minWidth: 720,
+    minHeight: 520,
     show: false,
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
-    backgroundColor: '#0f0f1a',
+    vibrancy: 'under-window',
+    visualEffectState: 'active',
+    trafficLightPosition: { x: 18, y: 18 },
+    backgroundColor: '#0a0a14',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -203,6 +240,7 @@ function createMainWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
+  secureWebContents(mainWindow);
 
   mainWindow.on('show', () => {
     ipcMain.emit('fetch-audio-devices');
@@ -390,10 +428,10 @@ function setupIPC() {
     if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
   });
 
-  // REST-backed actions (history, stats, config)
+  // REST-backed actions (history, stats, config) with 3s timeout to protect UI thread
   ipcMain.on('fetch-history', async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/history`);
+      const res = await fetch(`${BACKEND_URL}/api/history`, { signal: AbortSignal.timeout(3000) });
       const data = await res.json();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('history-update', data);
@@ -404,7 +442,7 @@ function setupIPC() {
 
   ipcMain.on('fetch-stats', async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/stats`);
+      const res = await fetch(`${BACKEND_URL}/api/stats`, { signal: AbortSignal.timeout(3000) });
       const data = await res.json();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('stats-update', data);
@@ -414,7 +452,7 @@ function setupIPC() {
 
   ipcMain.on('fetch-audio-devices', async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/audio-devices`);
+      const res = await fetch(`${BACKEND_URL}/api/audio-devices`, { signal: AbortSignal.timeout(3000) });
       const data = await res.json();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('audio-devices-update', data);
@@ -424,7 +462,7 @@ function setupIPC() {
 
   ipcMain.on('delete-entry', async (_e, id) => {
     try {
-      await fetch(`${BACKEND_URL}/api/history/${id}`, { method: 'DELETE' });
+      await fetch(`${BACKEND_URL}/api/history/${id}`, { method: 'DELETE', signal: AbortSignal.timeout(3000) });
       ipcMain.emit('fetch-history');
       ipcMain.emit('fetch-stats');
     } catch {}
@@ -432,7 +470,7 @@ function setupIPC() {
 
   ipcMain.on('clear-history', async () => {
     try {
-      await fetch(`${BACKEND_URL}/api/history`, { method: 'DELETE' });
+      await fetch(`${BACKEND_URL}/api/history`, { method: 'DELETE', signal: AbortSignal.timeout(3000) });
       ipcMain.emit('fetch-history');
       ipcMain.emit('fetch-stats');
     } catch {}
@@ -444,19 +482,35 @@ function setupIPC() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg),
+        signal: AbortSignal.timeout(3000),
       });
     } catch {}
   });
 
   ipcMain.on('request-health', async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/health`);
+      const res = await fetch(`${BACKEND_URL}/api/health`, { signal: AbortSignal.timeout(3000) });
       const data = await res.json();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('health-update', data);
       }
     } catch {}
   });
+}
+
+function stopBackendProcess() {
+  if (pythonProcess) {
+    const proc = pythonProcess;
+    pythonProcess = null;
+    try {
+      proc.kill('SIGTERM');
+    } catch {}
+    setTimeout(() => {
+      try {
+        if (!proc.killed) proc.kill('SIGKILL');
+      } catch {}
+    }, 1200);
+  }
 }
 
 // ─── App Lifecycle ───────────────────────────────────────────────────
@@ -487,10 +541,7 @@ app.whenReady().then(() => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
-  if (pythonProcess) {
-    pythonProcess.kill('SIGTERM');
-    pythonProcess = null;
-  }
+  stopBackendProcess();
   if (ws) {
     try { ws.close(); } catch {}
   }
@@ -498,6 +549,17 @@ app.on('will-quit', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
+  stopBackendProcess();
+});
+
+process.on('SIGINT', () => {
+  stopBackendProcess();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  stopBackendProcess();
+  process.exit(0);
 });
 
 app.on('window-all-closed', (e) => {

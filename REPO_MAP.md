@@ -40,7 +40,7 @@
   - `def get_frontmost_app()`
 
 ### `backend/database.py`
-  > Scriber — SQLite Database for Transcription History
+  > Scriber — High-Performance SQLite Database for Transcription History
   - `def _connect()`
   - `def init_db()`
   - `def save_transcription(raw_text, cleaned_text, duration, model)`
@@ -118,6 +118,7 @@
   - `function setPixel(buf, w, x, y, r, g, b, a = 255)`
   - `function makeTrayIcon(state)`
   - `function updateTrayIcon(state)`
+  - `function secureWebContents(win)`
   - `function createWidgetWindow()`
   - `function showWidget()`
   - `function hideWidget()`
@@ -131,6 +132,7 @@
   - `function handleBackendMessage(msg)`
   - `function sendToAllRenderers(channel, data)`
   - `function setupIPC()`
+  - `function stopBackendProcess()`
 
 ### `preload.js`
   > Scriber — Electron Preload Script
@@ -155,6 +157,7 @@
 
 ### `src/renderer.js`
   > Scriber — Main Dashboard Renderer
+  - `function switchView(viewName)`
   - `function updateStats(stats)`
   - `function renderFilteredHistory()`
   - `function updateStatusBadge(state, extra = {})`
@@ -174,7 +177,8 @@
 
 ### `src/widget.js`
   > Scriber — Floating Widget Renderer
-  - `function playTone(freq, duration = 0.12, vol = 0.07)`
+  - `function getAudioContext()`
+  - `function playTone(freq, duration = 0.12, vol = 0.05)`
   - `function playStartSound()`
   - `function playDoneSound()`
   - `function playErrorSound()`

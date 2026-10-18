@@ -178,7 +178,7 @@ class AudioRecorder:
                     continue
 
             if not opened:
-                print(f"[Scriber] ❌ Failed to open microphone stream on device '{device_label}'")
+                print(f"[Scriber] ❌ Failed to open microphone stream on device '{device_label}'. Please verify microphone permissions in macOS System Settings → Privacy & Security → Microphone.")
                 self.recording = False
                 AudioRecorder._is_any_recording = False
                 return False

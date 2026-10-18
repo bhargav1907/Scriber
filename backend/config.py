@@ -3,6 +3,7 @@ Scriber — Configuration Management
 Stores user preferences in ~/.scriber/config.json
 """
 
+import os
 import json
 from pathlib import Path
 
@@ -28,7 +29,16 @@ DEFAULT_CONFIG = {
 def load_config() -> dict:
     """Load config from disk, merging with defaults for any missing keys."""
     APP_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(APP_DIR, 0o700)
+    except Exception:
+        pass
+
     if CONFIG_FILE.exists():
+        try:
+            os.chmod(CONFIG_FILE, 0o600)
+        except Exception:
+            pass
         try:
             with open(CONFIG_FILE) as f:
                 config = json.load(f)
@@ -42,7 +52,14 @@ def load_config() -> dict:
 
 
 def save_config(config: dict) -> None:
-    """Persist config to disk."""
+    """Persist config atomically to disk with strict user-only privacy permissions."""
     APP_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
+    tmp_file = APP_DIR / "config.json.tmp"
+    with open(tmp_file, "w") as f:
         json.dump(config, f, indent=2)
+    os.replace(tmp_file, CONFIG_FILE)
+    try:
+        os.chmod(CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+

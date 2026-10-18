@@ -12,8 +12,9 @@ const statusBadge       = document.getElementById('statusBadge');
 const statusInfo        = document.getElementById('statusInfo');
 const healthWhisper     = document.getElementById('healthWhisper');
 const healthOllama      = document.getElementById('healthOllama');
-const btnSettings       = document.getElementById('btnSettings');
 const btnRefresh        = document.getElementById('btnRefresh');
+const tabHistory        = document.getElementById('tabHistory');
+const tabSettings       = document.getElementById('tabSettings');
 const viewHistory       = document.getElementById('viewHistory');
 const viewSettings      = document.getElementById('viewSettings');
 
@@ -58,23 +59,70 @@ let currentCustomVocabulary = [];
 let currentWordReplacements = {};
 let currentConfigDevice = null;
 
-// ─── View Toggling ────────────────────────────────────────────────
+// ─── View Toggling (Apple Segmented Navigation) ────────────────────
 
-btnSettings.addEventListener('click', () => {
-  if (currentView === 'settings') {
-    currentView = 'history';
-    viewSettings.style.display = 'none';
-    viewHistory.style.display = '';
-    btnSettings.classList.remove('active');
-  } else {
-    currentView = 'settings';
+function switchView(viewName) {
+  currentView = viewName;
+  if (viewName === 'settings') {
     viewSettings.style.display = '';
     viewHistory.style.display = 'none';
-    btnSettings.classList.add('active');
+    if (tabSettings) {
+      tabSettings.classList.add('active');
+      tabSettings.setAttribute('aria-selected', 'true');
+    }
+    if (tabHistory) {
+      tabHistory.classList.remove('active');
+      tabHistory.setAttribute('aria-selected', 'false');
+    }
+  } else {
+    viewSettings.style.display = 'none';
+    viewHistory.style.display = '';
+    if (tabHistory) {
+      tabHistory.classList.add('active');
+      tabHistory.setAttribute('aria-selected', 'true');
+    }
+    if (tabSettings) {
+      tabSettings.classList.remove('active');
+      tabSettings.setAttribute('aria-selected', 'false');
+    }
+  }
+}
+
+if (tabHistory) tabHistory.addEventListener('click', () => switchView('history'));
+if (tabSettings) tabSettings.addEventListener('click', () => switchView('settings'));
+
+// ─── Native macOS Keyboard Shortcuts ──────────────────────────────
+
+window.addEventListener('keydown', (e) => {
+  // Cmd+1 -> Switch to History
+  if ((e.metaKey || e.ctrlKey) && e.key === '1') {
+    e.preventDefault();
+    switchView('history');
+  }
+  // Cmd+, or Cmd+2 -> Switch to Preferences
+  else if ((e.metaKey || e.ctrlKey) && (e.key === ',' || e.key === '2')) {
+    e.preventDefault();
+    switchView('settings');
+  }
+  // Escape -> Clear search filter or exit preferences back to history
+  else if (e.key === 'Escape') {
+    if (historySearch && document.activeElement === historySearch && historySearch.value) {
+      historySearch.value = '';
+      searchQuery = '';
+      searchClear.style.display = 'none';
+      renderFilteredHistory();
+    } else if (currentView === 'settings') {
+      switchView('history');
+    }
+  }
+  // Cmd+R -> Refresh
+  else if ((e.metaKey || e.ctrlKey) && (e.key === 'r' || e.key === 'R')) {
+    e.preventDefault();
+    btnRefresh?.click();
   }
 });
 
-btnRefresh.addEventListener('click', () => {
+btnRefresh?.addEventListener('click', () => {
   window.scriber.fetchHistory();
   window.scriber.fetchStats();
   btnRefresh.style.transform = 'rotate(360deg)';

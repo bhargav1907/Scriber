@@ -19,20 +19,34 @@ const bars = [0, 1, 2, 3, 4, 5, 6].map(i => document.getElementById(`bar${i}`));
 let timerInterval = null;
 let recordStart   = 0;
 
-// ─── Sound Effects (Synthesized on Apple AudioContext) ─────────────
+// ─── Sound Effects (Synthesized on Shared Apple AudioContext) ─────
 
-function playTone(freq, duration = 0.12, vol = 0.07) {
+let audioCtx = null;
+
+function getAudioContext() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) audioCtx = new AudioContextClass();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function playTone(freq, duration = 0.12, vol = 0.05) {
   try {
-    const ctx = new AudioContext();
+    const ctx = getAudioContext();
+    if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.type = 'sine';
-    osc.frequency.value = freq;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
     gain.gain.setValueAtTime(vol, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + duration);
   } catch {}
 }
