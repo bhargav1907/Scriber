@@ -24,6 +24,10 @@ from clipboard import paste_text
 from fn_listener import FnKeyListener
 from context_detector import get_frontmost_app
 from audio_ducker import AudioDucker
+try:
+    from streaming_transcriber import StreamingTranscriber
+except ImportError:
+    from backend.streaming_transcriber import StreamingTranscriber
 
 
 # ---------------------------------------------------------------------------
@@ -40,6 +44,7 @@ class AppState:
             host=self.config.get("ollama_host", "http://localhost:11434"),
         )
         self.audio_ducker = AudioDucker()
+        self.streaming_transcriber: StreamingTranscriber | None = None
         self.current_app = {"name": "General", "category": "general", "icon": "✨"}
         self.current_mode = "general"
         self.is_recording = False
@@ -126,13 +131,33 @@ async def start_recording():
         await broadcast({"type": "state", "state": "idle"})
         return
 
+    # Initialize and start concurrent streaming transcriber
+    delivery_mode = state.config.get("delivery_mode", "paste_on_finish")
+    llm_enabled = state.config.get("llm_cleanup_enabled", True)
+    custom_vocab = state.config.get("custom_vocabulary", [])
+    word_reps = state.config.get("word_replacements", {})
+    app_name = state.current_app.get("name") if state.current_app else None
+
+    state.streaming_transcriber = StreamingTranscriber(
+        transcriber=state.transcriber,
+        cleaner=state.cleaner,
+        delivery_mode=delivery_mode,
+        custom_vocabulary=custom_vocab,
+        word_replacements=word_reps,
+        app_name=app_name,
+        mode=state.current_mode,
+        llm_enabled=llm_enabled,
+    )
+    state.recorder.chunk_callback = state.streaming_transcriber.on_chunk
+    state.streaming_transcriber.start()
+
     await broadcast({
         "type": "state",
         "state": "listening",
         "active_app": state.current_app,
         "mode": state.current_mode,
     })
-    print(f"[Scriber] 🎤 Recording started (App: {state.current_app['name']}, Mode: {state.current_mode})")
+    print(f"[Scriber] 🎤 Recording started (App: {state.current_app['name']}, Mode: {state.current_mode}, Delivery: {delivery_mode})")
 
 
 async def stop_recording():
@@ -179,10 +204,11 @@ async def handle_fn_action(action: str):
 
 
 async def _process_pipeline():
-    """Asynchronous pipeline: transcribe (in thread pool) → LLM cleanup → native paste → save."""
+    """Asynchronous pipeline: finalize concurrent streaming transcription → LLM cleanup → native paste → save."""
     try:
         # 1. Stop recorder and get in-memory float32 audio
         audio_np, duration, audio_path = state.recorder.stop()
+        state.recorder.chunk_callback = None
 
         if audio_np is None or audio_np.size == 0:
             await broadcast({"type": "state", "state": "error", "message": "No audio captured"})
@@ -192,20 +218,38 @@ async def _process_pipeline():
 
         t_pipeline_start = time.time()
 
-        # 2. Transcribe audio acoustically in worker thread pool (MLX Metal GPU / faster-whisper)
-        t_w0 = time.time()
-        custom_vocab = state.config.get("custom_vocabulary", [])
-        loop = asyncio.get_running_loop()
-        raw_text = await loop.run_in_executor(None, state.transcriber.transcribe, audio_np, custom_vocab)
-        t_whisper = time.time() - t_w0
+        # 2. Finalize concurrent streaming transcription
+        if state.streaming_transcriber:
+            result = await state.streaming_transcriber.finalize(
+                full_audio_np=audio_np,
+                auto_paste=state.config.get("auto_paste", True),
+            )
+            raw_text = result["raw_text"]
+            cleaned_text = result["cleaned_text"]
+            whisper_ms = result["whisper_ms"]
+            llm_ms = result["llm_ms"]
+            total_ms = result["total_ms"]
+        else:
+            t_w0 = time.time()
+            custom_vocab = state.config.get("custom_vocabulary", [])
+            loop = asyncio.get_running_loop()
+            raw_text = await loop.run_in_executor(None, state.transcriber.transcribe, audio_np, custom_vocab)
+            whisper_ms = int((time.time() - t_w0) * 1000)
+            cleaned_text = state.cleaner.normalize_text(raw_text, custom_vocab, state.config.get("word_replacements", {}))
+            if state.config.get("auto_paste", True):
+                paste_text(cleaned_text)
+            llm_ms = 0
+            total_ms = whisper_ms
 
         # Anti-hallucination guard 1: If raw text is just an echoing of the custom vocabulary list, discard it
+        custom_vocab = state.config.get("custom_vocabulary", [])
         if raw_text and custom_vocab:
             words = [w.strip().lower() for w in re.split(r'[,.\s]+', raw_text) if w.strip()]
             vocab_set = {w.strip().lower() for v in custom_vocab for w in v.split()} | {"vocabulary"}
             if words and all(w in vocab_set for w in words) and len(set(words)) >= len(vocab_set) * 0.7:
                 print(f"[Scriber] ⚠️ Discarded prompt hallucination: '{raw_text[:60]}'")
                 raw_text = ""
+                cleaned_text = ""
 
         # Anti-hallucination guard 2: Whisper silence phantom outputs ("Thank you.", "Thanks for watching!", etc.)
         if raw_text and raw_text.strip().lower() in {
@@ -219,6 +263,7 @@ async def _process_pipeline():
         }:
             print(f"[Scriber] ⚠️ Discarded silence hallucination: '{raw_text}'")
             raw_text = ""
+            cleaned_text = ""
 
         if not raw_text or not raw_text.strip():
             await broadcast({"type": "state", "state": "error", "message": "No speech detected"})
@@ -226,61 +271,32 @@ async def _process_pipeline():
             await broadcast({"type": "state", "state": "idle"})
             return
 
-        # 3. LLM cleanup with app mode context & word replacements (native async on main loop)
-        cleaned_text = raw_text
-        t_llm = 0.0
-        word_reps = state.config.get("word_replacements", {})
-        app_name = state.current_app.get("name") if state.current_app else None
-        if state.config.get("llm_cleanup_enabled", True) and state.current_mode != "raw":
-            t_l0 = time.time()
-            try:
-                cleaned_text = await state.cleaner.cleanup(
-                    raw_text,
-                    mode=state.current_mode,
-                    custom_vocabulary=custom_vocab,
-                    word_replacements=word_reps,
-                    app_name=app_name,
-                )
-            except Exception as e:
-                print(f"[Scriber] LLM cleanup error (using normalized text): {e}")
-                cleaned_text = state.cleaner.normalize_text(
-                    raw_text,
-                    custom_vocabulary=custom_vocab,
-                    word_replacements=word_reps,
-                    app_name=app_name,
-                )
-            t_llm = time.time() - t_l0
-        else:
-            cleaned_text = state.cleaner.normalize_text(
-                raw_text,
-                custom_vocabulary=custom_vocab,
-                word_replacements=word_reps,
-                app_name=app_name,
-            )
+        # 3. Save to history
+        save_transcription(raw_text, cleaned_text, duration, state.config.get("whisper_model", "large-v3-turbo"))
 
-        # 4. Instant native paste into active app (sub-millisecond AppKit + Quartz with clipboard restore)
-        if state.config.get("auto_paste", True):
-            paste_text(cleaned_text)
-
-        # 5. Save to history
-        save_transcription(raw_text, cleaned_text, duration, state.config.get("whisper_model", "base"))
-
-        t_total = time.time() - t_pipeline_start
         word_count = len(cleaned_text.split())
 
-        # 6. Broadcast success
+        # 4. Broadcast success with metrics breakdown
         await broadcast({
             "type": "state",
             "state": "done",
             "raw_text": raw_text,
             "cleaned_text": cleaned_text,
+            "text": cleaned_text,
             "duration": round(duration, 1),
-            "pipeline_time": round(t_total, 2),
+            "pipeline_time": round(total_ms / 1000.0, 2),
             "word_count": word_count,
             "active_app": state.current_app,
             "mode": state.current_mode,
+            "metrics": {
+                "whisper_ms": whisper_ms,
+                "llm_ms": llm_ms,
+                "total_ms": total_ms,
+                "delivery_mode": state.config.get("delivery_mode", "paste_on_finish"),
+                "llm_enabled": state.config.get("llm_cleanup_enabled", True),
+            },
         })
-        print(f"[Scriber] ⚡ Processed in {t_total:.2f}s (STT: {t_whisper:.2f}s, LLM: {t_llm:.2f}s) → \"{cleaned_text[:60]}\"")
+        print(f"[Scriber] ⚡ Completed in {total_ms}ms (Whisper: {whisper_ms}ms · LLM: {llm_ms}ms) → \"{cleaned_text[:60]}\"")
 
         await asyncio.sleep(2.0)
         await broadcast({"type": "state", "state": "idle"})
