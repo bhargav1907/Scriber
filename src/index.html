@@ -186,8 +186,18 @@
           </div>
           <div class="setting-row">
             <div class="setting-label">
-              <span>AI Text Cleanup</span>
-              <span class="setting-desc">Remove filler words, fix grammar & punctuation</span>
+              <span>Delivery Mode</span>
+              <span class="setting-desc" id="deliveryModeDesc">Choose between streaming instant paste or real-time typing</span>
+            </div>
+            <div class="settings-segment" id="deliveryModeSegment">
+              <button class="settings-segment-btn active" data-delivery="paste_on_finish" id="btnDelivPaste">📋 Paste on Finish</button>
+              <button class="settings-segment-btn" data-delivery="live_typing" id="btnDelivLive">⌨️ Live Typing</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>AI Text Cleanup (Ollama)</span>
+              <span class="setting-desc" id="settingLLMDesc">Format punctuation, remove fillers & code format (adds ~120ms latency)</span>
             </div>
             <label class="toggle">
               <input type="checkbox" id="settingLLMCleanup" checked>

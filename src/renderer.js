@@ -51,6 +51,10 @@ const repTrigger          = document.getElementById('repTrigger');
 const repExpansion        = document.getElementById('repExpansion');
 const btnAddRep           = document.getElementById('btnAddRep');
 const replacementsList    = document.getElementById('replacementsList');
+const btnDelivPaste       = document.getElementById('btnDelivPaste');
+const btnDelivLive        = document.getElementById('btnDelivLive');
+const deliveryModeDesc    = document.getElementById('deliveryModeDesc');
+const settingLLMDesc      = document.getElementById('settingLLMDesc');
 
 let currentView = 'history';
 let history = [];
@@ -513,11 +517,51 @@ function applyConfig(config) {
       settingInputDevice.value = match ? match.value : 'default';
     }
   }
+
+  // Delivery Mode
+  if (config.delivery_mode !== undefined) {
+    const isLive = config.delivery_mode === 'live_typing';
+    if (btnDelivPaste) btnDelivPaste.classList.toggle('active', !isLive);
+    if (btnDelivLive) btnDelivLive.classList.toggle('active', isLive);
+    if (deliveryModeDesc) {
+      deliveryModeDesc.textContent = isLive
+        ? 'Active: Real-time typing directly into focused window (~0ms delay)'
+        : 'Active: Streaming background transcription with instant paste (<150ms delay)';
+    }
+  }
+
+  // LLM latency hint
+  if (config.llm_cleanup_enabled !== undefined && settingLLMDesc) {
+    settingLLMDesc.textContent = config.llm_cleanup_enabled
+      ? 'Active: AI formatting & filler removal (adds ~120ms latency)'
+      : 'Disabled: 0ms LLM overhead (fastest raw delivery)';
+  }
 }
 
 function sendConfigUpdate(key, value) {
   window.scriber.updateConfig({ [key]: value });
 }
+
+// Delivery Mode Switchers
+btnDelivPaste?.addEventListener('click', () => {
+  btnDelivPaste.classList.add('active');
+  btnDelivLive?.classList.remove('active');
+  sendConfigUpdate('delivery_mode', 'paste_on_finish');
+  if (deliveryModeDesc) {
+    deliveryModeDesc.textContent = 'Active: Streaming background transcription with instant paste (<150ms delay)';
+  }
+  showToast('Delivery: Paste on Finish');
+});
+
+btnDelivLive?.addEventListener('click', () => {
+  btnDelivLive.classList.add('active');
+  btnDelivPaste?.classList.remove('active');
+  sendConfigUpdate('delivery_mode', 'live_typing');
+  if (deliveryModeDesc) {
+    deliveryModeDesc.textContent = 'Active: Real-time typing directly into focused window (~0ms delay)';
+  }
+  showToast('Delivery: Live Typing');
+});
 
 // Event Listeners for Config Controls
 quickModeSelect.addEventListener('change', () => {
@@ -544,7 +588,16 @@ settingInputDevice.addEventListener('change', () => {
 
 settingWhisperModel.addEventListener('change', () => sendConfigUpdate('whisper_model', settingWhisperModel.value));
 settingAudioDucking.addEventListener('change', () => sendConfigUpdate('audio_ducking', settingAudioDucking.checked));
-settingLLMCleanup.addEventListener('change', () => sendConfigUpdate('llm_cleanup_enabled', settingLLMCleanup.checked));
+settingLLMCleanup.addEventListener('change', () => {
+  const enabled = settingLLMCleanup.checked;
+  sendConfigUpdate('llm_cleanup_enabled', enabled);
+  if (settingLLMDesc) {
+    settingLLMDesc.textContent = enabled
+      ? 'Active: AI formatting & filler removal (adds ~120ms latency)'
+      : 'Disabled: 0ms LLM overhead (fastest raw delivery)';
+  }
+  showToast(`AI Text Cleanup: ${enabled ? 'Enabled' : 'Disabled'}`);
+});
 settingAutoPaste.addEventListener('change', () => sendConfigUpdate('auto_paste', settingAutoPaste.checked));
 settingLLMModel.addEventListener('change', () => sendConfigUpdate('llm_model', settingLLMModel.value));
 settingOllamaHost.addEventListener('change', () => sendConfigUpdate('ollama_host', settingOllamaHost.value));
