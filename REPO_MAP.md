@@ -95,15 +95,15 @@
   - `async def api_update_config(body)` [@app.post]
 
 ### `backend/streaming_transcriber.py`
-  > Scriber — Streaming Transcription Manager
+  > Scriber — Dictation Pipeline Orchestrator
   - **class `StreamingTranscriber`**
     - `def __init__(self, transcriber, cleaner, delivery_mode, custom_vocabulary, word_replacements, app_name, mode, llm_enabled)`
     - `def start(self)`
     - `def reset(self)`
-    - `def get_accumulated_text(self)`
     - `def on_chunk(self, chunk, is_final)`
+    - `def get_accumulated_text(self)`
     - `def _calculate_delta(self, prev, current)`
-    - `def _process_chunks(self)`
+    - `def _is_silence_or_hallucination(self, text)`
     - `async def finalize(self, full_audio_np, auto_paste)`
 
 ### `backend/transcriber.py`

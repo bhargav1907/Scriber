@@ -31,9 +31,6 @@ class AudioRecorder:
         self.stream: sd.InputStream | None = None
         self.start_time: float = 0
         self.level_callback = None  # Called with (float) audio level 0..1
-        self.chunk_callback = None  # Called with (np.ndarray chunk_16k, bool is_final)
-        self._streaming_chunks: list[np.ndarray] = []
-        self._streaming_samples: int = 0
 
     def set_device(self, device: int | str | None) -> None:
         """Update selected input device."""
@@ -122,8 +119,6 @@ class AudioRecorder:
                 self.stream = None
 
             self.audio_chunks = []
-            self._streaming_chunks = []
-            self._streaming_samples = 0
             self.start_time = time.time()
             self.active_sample_rate = self.sample_rate
 
@@ -212,28 +207,6 @@ class AudioRecorder:
                 pass
             self.stream = None
 
-        # Flush any remaining audio to streaming chunk callback
-        if self.chunk_callback and self._streaming_chunks:
-            raw_chunk = np.concatenate(self._streaming_chunks, axis=0).flatten()
-            self._streaming_chunks = []
-            self._streaming_samples = 0
-            if len(raw_chunk) > 0:
-                if self.active_sample_rate != self.sample_rate:
-                    target_len = int(round(len(raw_chunk) * self.sample_rate / self.active_sample_rate))
-                    chunk_16k = np.interp(
-                        np.linspace(0, len(raw_chunk), target_len, endpoint=False),
-                        np.arange(len(raw_chunk)),
-                        raw_chunk,
-                    ).astype(np.float32)
-                else:
-                    chunk_16k = raw_chunk.astype(np.float32)
-                rms = float(np.sqrt(np.mean(chunk_16k ** 2)))
-                if rms >= 0.003:
-                    try:
-                        self.chunk_callback(chunk_16k, True)
-                    except Exception as e:
-                        print(f"[Scriber] Final streaming chunk callback error: {e}")
-
         audio_np, filepath = self._process_audio()
         return audio_np, duration, filepath
 
@@ -249,34 +222,7 @@ class AudioRecorder:
             return
         self.audio_chunks.append(indata.copy())
 
-        # Accumulate for real-time speech chunk emission
-        if self.chunk_callback:
-            self._streaming_chunks.append(indata.copy())
-            self._streaming_samples += len(indata)
-            # Emit chunk once ~1.0s of audio has accumulated
-            chunk_target = int(self.active_sample_rate * 1.0)
-            if self._streaming_samples >= chunk_target:
-                raw_chunk = np.concatenate(self._streaming_chunks, axis=0).flatten()
-                self._streaming_chunks = []
-                self._streaming_samples = 0
 
-                # Resample to 16 kHz if recorded at a different rate
-                if self.active_sample_rate != self.sample_rate and len(raw_chunk) > 0:
-                    target_len = int(round(len(raw_chunk) * self.sample_rate / self.active_sample_rate))
-                    chunk_16k = np.interp(
-                        np.linspace(0, len(raw_chunk), target_len, endpoint=False),
-                        np.arange(len(raw_chunk)),
-                        raw_chunk,
-                    ).astype(np.float32)
-                else:
-                    chunk_16k = raw_chunk.astype(np.float32)
-
-                rms = float(np.sqrt(np.mean(chunk_16k ** 2)))
-                if rms >= 0.003:
-                    try:
-                        self.chunk_callback(chunk_16k, False)
-                    except Exception as e:
-                        print(f"[Scriber] Streaming chunk callback error: {e}")
 
         # Report audio level to the UI
         if self.level_callback:

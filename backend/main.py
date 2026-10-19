@@ -148,8 +148,6 @@ async def start_recording():
         mode=state.current_mode,
         llm_enabled=llm_enabled,
     )
-    state.recorder.chunk_callback = state.streaming_transcriber.on_chunk
-    state.streaming_transcriber.start()
 
     await broadcast({
         "type": "state",
@@ -208,7 +206,6 @@ async def _process_pipeline():
     try:
         # 1. Stop recorder and get in-memory float32 audio
         audio_np, duration, audio_path = state.recorder.stop()
-        state.recorder.chunk_callback = None
 
         if audio_np is None or audio_np.size == 0:
             await broadcast({"type": "state", "state": "error", "message": "No audio captured"})
