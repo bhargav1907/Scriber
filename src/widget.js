@@ -135,12 +135,21 @@ function setState(state, extra = {}) {
     case 'done':
       widget.classList.add('visible', 'state-done');
       dot.classList.add('done');
-      text.textContent = 'Pasted!';
+      text.textContent = extra.metrics?.delivery_mode === 'live_typing' ? 'Typed!' : 'Pasted!';
       stopTimer();
 
-      const timeSec = extra.pipeline_time ? `${extra.pipeline_time}s` : '0.6s';
-      const words = extra.word_count ? ` · ${extra.word_count}w` : '';
-      speedText.textContent = `⚡ ${timeSec}${words}`;
+      if (extra.metrics) {
+        const m = extra.metrics;
+        const totalStr = m.total_ms < 1000 ? `${m.total_ms}ms` : `${(m.total_ms / 1000).toFixed(2)}s`;
+        const breakdown = m.llm_enabled && m.llm_ms > 0
+          ? `(W: ${m.whisper_ms}ms · L: ${m.llm_ms}ms)`
+          : `(W: ${m.whisper_ms}ms)`;
+        speedText.textContent = `⚡ ${totalStr} ${breakdown}`;
+      } else {
+        const timeSec = extra.pipeline_time ? `${extra.pipeline_time}s` : '0.6s';
+        const words = extra.word_count ? ` · ${extra.word_count}w` : '';
+        speedText.textContent = `⚡ ${timeSec}${words}`;
+      }
 
       playDoneSound();
       break;
