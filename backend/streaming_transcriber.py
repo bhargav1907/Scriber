@@ -27,6 +27,11 @@ SILENCE_PHRASES = {
 
 
 class StreamingTranscriber:
+    """
+    Scriber dictation pipeline orchestrator.
+    Manages end-to-end full-waveform transcription, acoustic anti-hallucination defense,
+    contextual LLM polishing, delivery routing, and millisecond latency profiling.
+    """
     def __init__(
         self,
         transcriber,
@@ -46,35 +51,6 @@ class StreamingTranscriber:
         self.app_name = app_name
         self.mode = mode
         self.llm_enabled = llm_enabled
-
-    def start(self):
-        """No-op retained for interface stability."""
-        pass
-
-    def reset(self):
-        """No-op retained for interface stability."""
-        pass
-
-    def on_chunk(self, chunk: np.ndarray, is_final: bool = False):
-        """No-op: full audio waveform is transcribed upon completion to preserve 100% Whisper attention accuracy."""
-        pass
-
-    def get_accumulated_text(self) -> str:
-        return ""
-
-    def _calculate_delta(self, prev: str, current: str) -> str:
-        """Calculate new characters or words to emit to the active cursor."""
-        if not current:
-            return ""
-        if not prev:
-            return current
-        if current.startswith(prev):
-            return current[len(prev):]
-        prev_words = prev.split()
-        curr_words = current.split()
-        if len(curr_words) > len(prev_words) and curr_words[:len(prev_words)] == prev_words:
-            return " " + " ".join(curr_words[len(prev_words):])
-        return " " + current.strip()
 
     def _is_silence_or_hallucination(self, text: str) -> bool:
         """Filter out Whisper silence phantom outputs and prompt echoing hallucinations."""

@@ -224,7 +224,7 @@ async def _process_pipeline():
 
         t_pipeline_start = time.time()
 
-        # 2. Finalize concurrent streaming transcription
+        # 2. Transcribe and deliver through pipeline orchestrator
         if state.streaming_transcriber:
             result = await state.streaming_transcriber.finalize(
                 full_audio_np=audio_np,
@@ -236,40 +236,8 @@ async def _process_pipeline():
             llm_ms = result["llm_ms"]
             total_ms = result["total_ms"]
         else:
-            t_w0 = time.time()
-            custom_vocab = state.config.get("custom_vocabulary", [])
-            loop = asyncio.get_running_loop()
-            raw_text = await loop.run_in_executor(None, state.transcriber.transcribe, audio_np, custom_vocab)
-            whisper_ms = int((time.time() - t_w0) * 1000)
-            cleaned_text = state.cleaner.normalize_text(raw_text, custom_vocab, state.config.get("word_replacements", {}))
-            if state.config.get("auto_paste", True):
-                paste_text(cleaned_text)
-            llm_ms = 0
-            total_ms = whisper_ms
-
-        # Anti-hallucination guard 1: If raw text is just an echoing of the custom vocabulary list, discard it
-        custom_vocab = state.config.get("custom_vocabulary", [])
-        if raw_text and custom_vocab:
-            words = [w.strip().lower() for w in re.split(r'[,.\s]+', raw_text) if w.strip()]
-            vocab_set = {w.strip().lower() for v in custom_vocab for w in v.split()} | {"vocabulary"}
-            if words and all(w in vocab_set for w in words) and len(set(words)) >= len(vocab_set) * 0.7:
-                print(f"[Scriber] ⚠️ Discarded prompt hallucination: '{raw_text[:60]}'")
-                raw_text = ""
-                cleaned_text = ""
-
-        # Anti-hallucination guard 2: Whisper silence phantom outputs ("Thank you.", "Thanks for watching!", etc.)
-        if raw_text and raw_text.strip().lower() in {
-            "thank you.", "thank you", "thanks for watching.", "thanks for watching!",
-            "thank you very much.", "thank you very much", "thanks.", "thanks",
-            "you", "bye.", "bye", "goodbye.", "goodbye",
-            "please subscribe.", "subscribe", "[music]", "[applause]", "[silence]",
-            "(music)", "(applause)", "(silence)", "[blank_audio]", "thank you for watching.",
-            "thank you for watching", "so, thank you.", "so, thank you", "thank you so much.",
-            "thank you so much", "thanks for listening.", "thanks for listening!",
-        }:
-            print(f"[Scriber] ⚠️ Discarded silence hallucination: '{raw_text}'")
-            raw_text = ""
-            cleaned_text = ""
+            raw_text, cleaned_text = "", ""
+            whisper_ms, llm_ms, total_ms = 0, 0, 0
 
         if not raw_text or not raw_text.strip():
             await broadcast({"type": "state", "state": "error", "message": "No speech detected"})

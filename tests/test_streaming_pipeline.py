@@ -26,15 +26,6 @@ class TestStreamingPipeline(unittest.TestCase):
         )
         self.assertEqual(st.delivery_mode, "paste_on_finish")
 
-    def test_streaming_delta_calculation(self):
-        st = StreamingTranscriber(
-            transcriber=MockTranscriber(),
-            cleaner=MockCleaner(),
-            delivery_mode="live_typing",
-        )
-        delta = st._calculate_delta("hello", "hello world")
-        self.assertEqual(delta, " world")
-
     def test_silence_detection(self):
         st = StreamingTranscriber(
             transcriber=MockTranscriber("Thank you."),
@@ -44,7 +35,7 @@ class TestStreamingPipeline(unittest.TestCase):
         self.assertTrue(st._is_silence_or_hallucination("[music]"))
         self.assertFalse(st._is_silence_or_hallucination("Testing the dictation pipeline"))
 
-    def test_finalize_execution(self):
+    def test_finalize_execution_success(self):
         st = StreamingTranscriber(
             transcriber=MockTranscriber("scriber test"),
             cleaner=MockCleaner(),
@@ -56,6 +47,30 @@ class TestStreamingPipeline(unittest.TestCase):
         self.assertEqual(result["raw_text"], "scriber test")
         self.assertEqual(result["cleaned_text"], "scriber test")
         self.assertGreaterEqual(result["whisper_ms"], 0)
+        self.assertEqual(result["llm_ms"], 0)
+        self.assertGreaterEqual(result["total_ms"], 0)
+
+    def test_finalize_silence_filtering(self):
+        st = StreamingTranscriber(
+            transcriber=MockTranscriber("Thanks for watching!"),
+            cleaner=MockCleaner(),
+            delivery_mode="paste_on_finish",
+        )
+        audio = np.zeros(16000, dtype=np.float32)
+        result = asyncio.run(st.finalize(audio, auto_paste=False))
+        # Must be discarded before delivery
+        self.assertEqual(result["raw_text"], "")
+        self.assertEqual(result["cleaned_text"], "")
+
+    def test_finalize_empty_audio(self):
+        st = StreamingTranscriber(
+            transcriber=MockTranscriber("hello"),
+            cleaner=MockCleaner(),
+        )
+        result = asyncio.run(st.finalize(None, auto_paste=False))
+        self.assertEqual(result["raw_text"], "")
+        self.assertEqual(result["cleaned_text"], "")
+        self.assertEqual(result["total_ms"], 0)
 
 if __name__ == "__main__":
     unittest.main()
