@@ -116,11 +116,26 @@ class Transcriber:
         finally:
             self._loading = False
 
-    def transcribe(self, audio_source: str | np.ndarray) -> str:
+    def _build_initial_prompt(self, custom_vocabulary: list[str] | None = None) -> str | None:
+        """
+        Build an acoustic decoder conditioning prompt for Whisper.
+        Biases Whisper's token priors towards domain terms and proper nouns
+        (e.g., 'Claude', 'Anthropic', 'ChatGPT', 'Ollama', 'Whisper') without hallucinating.
+        """
+        base_terms = ["Claude", "Anthropic", "ChatGPT", "Ollama", "Whisper", "Apple Silicon", "MLX", "GitHub"]
+        terms = list(base_terms)
+        if custom_vocabulary:
+            for v in custom_vocabulary:
+                if isinstance(v, str) and v.strip() and v.strip() not in terms:
+                    terms.append(v.strip())
+        prompt_str = ", ".join(terms[:25])
+        return f"Vocabulary: {prompt_str}."
+
+    def transcribe(self, audio_source: str | np.ndarray, custom_vocabulary: list[str] | None = None) -> str:
         """
         Transcribe an in-memory numpy float32 array or audio WAV file path to text
         using Apple Silicon Metal GPU (MLX) or greedy CPU search.
-        Transcribes strictly the spoken acoustic signal without prompt hallucination.
+        Conditioned on custom vocabulary to recognize proper nouns accurately.
         """
         if not self.is_ready:
             self.load_model()
@@ -150,6 +165,8 @@ class Transcriber:
                 print(f"[Scriber] 🔇 Audio signal below voice threshold (max_amp={max_amp:.4f}, rms={rms:.4f}), skipping.")
                 return ""
 
+            initial_prompt = self._build_initial_prompt(custom_vocabulary)
+
             # 2. Apple Silicon MLX Metal GPU path (~0.4 - 0.7s)
             if self._use_mlx and self.model_size in MLX_MODEL_MAP:
                 repo = MLX_MODEL_MAP[self.model_size]
@@ -160,10 +177,15 @@ class Transcriber:
                         language="en",
                         temperature=0.0,
                         condition_on_previous_text=False,
+                        initial_prompt=initial_prompt,
                         word_timestamps=False,
                         fp16=True,
                     )
                     raw = res.get("text", "").strip()
+
+                    # Strip any accidental prompt prefix echo
+                    if raw.lower().startswith("vocabulary:"):
+                        raw = raw[11:].strip()
 
                     # Filter out silence hallucinations (e.g. "Thank you.", "Thanks for watching!")
                     if raw.lower().strip() in SILENCE_HALLUCINATIONS:
@@ -189,6 +211,7 @@ class Transcriber:
                     best_of=1,
                     temperature=0.0,
                     condition_on_previous_text=False,
+                    initial_prompt=initial_prompt,
                     without_timestamps=True,
                     vad_filter=True,
                     vad_parameters=dict(
@@ -197,6 +220,8 @@ class Transcriber:
                     ),
                 )
                 raw = " ".join(seg.text.strip() for seg in segments).strip()
+                if raw.lower().startswith("vocabulary:"):
+                    raw = raw[11:].strip()
                 if raw.lower() in SILENCE_HALLUCINATIONS:
                     return ""
                 cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE).strip()

@@ -36,45 +36,124 @@ class LLMCleaner:
             await self._client.aclose()
             self._client = None
 
+    def normalize_text(
+        self,
+        text: str,
+        custom_vocabulary: list[str] | None = None,
+        word_replacements: dict[str, str] | None = None,
+        app_name: str | None = None,
+    ) -> str:
+        """
+        Fast deterministic acoustic normalization:
+        1. Contextual phonetic homophone fixes (e.g. 'cloud desktop app' -> 'Claude desktop app', 'get hub' -> 'GitHub')
+        2. Custom vocabulary exact capitalization
+        3. Word replacements
+        """
+        if not text:
+            return ""
+        text = self._apply_phonetic_fixes(text, app_name=app_name)
+        text = self._apply_custom_vocab(text, custom_vocabulary)
+        text = self._apply_replacements(text, word_replacements)
+        return text
+
+    def _apply_phonetic_fixes(self, text: str, app_name: str | None = None) -> str:
+        """
+        Fix common speech-to-text acoustic collisions and homophones where Whisper
+        substitutes high-frequency dictionary words for proper technical nouns.
+        """
+        if not text:
+            return text
+        res = text
+
+        # 1. Claude vs Cloud:
+        # - Phrases where 'cloud' is paired with Claude products, models, or apps
+        res = re.sub(r'\b(the\s+)?cloud\s+(desktop\s+app|desktop|code|cli|opus|sonnet|haiku|3(?:\.5|\.7)?|model|ai)\b', r'\1Claude \2', res, flags=re.IGNORECASE)
+        # - Anthropic's cloud -> Anthropic's Claude
+        res = re.sub(r'\b(anthropic(?:\'s)?)\s+cloud\b', r'\1 Claude', res, flags=re.IGNORECASE)
+        # - Conversational verbs addressing the AI: ask cloud, tell cloud, using cloud, with cloud
+        res = re.sub(r'\b(ask|telling|tell|prompt|using|with|via)\s+cloud\b', r'\1 Claude', res, flags=re.IGNORECASE)
+        # - Agentic actions: cloud wrote, cloud generated, cloud suggested, cloud answered
+        res = re.sub(r'\bcloud\s+(wrote|generated|suggested|answered|replied|said)\b', r'Claude \1', res, flags=re.IGNORECASE)
+        # - If frontmost application is Claude, standalone 'cloud' is almost always Claude
+        if app_name and app_name.lower() in ("claude", "claude desktop"):
+            res = re.sub(r'\bcloud\b', 'Claude', res, flags=re.IGNORECASE)
+
+        # 2. General tech acoustic split/homophone fixes
+        res = re.sub(r'\b(get\s+hub|git\s+hub)\b', 'GitHub', res, flags=re.IGNORECASE)
+        res = re.sub(r'\bmac\s+os\b', 'macOS', res, flags=re.IGNORECASE)
+        res = re.sub(r'\b(chat\s*gpt|chat\s+g\s*p\s*t)\b', 'ChatGPT', res, flags=re.IGNORECASE)
+        res = re.sub(r'\bopen\s*a\s*i\b', 'OpenAI', res, flags=re.IGNORECASE)
+        res = re.sub(r'\b(v\s*s\s*code|visual\s+studio\s+code)\b', 'VS Code', res, flags=re.IGNORECASE)
+        res = re.sub(r'\b(anti\s*gravity|ant\s+gravity)\b', 'Antigravity', res, flags=re.IGNORECASE)
+        res = re.sub(r'\byou\s+tube\b', 'YouTube', res, flags=re.IGNORECASE)
+
+        return res
+
+    def _apply_custom_vocab(self, text: str, custom_vocabulary: list[str] | None = None) -> str:
+        """Enforce exact casing from custom vocabulary on recognized words."""
+        if not text or not custom_vocabulary:
+            return text
+        for term in custom_vocabulary:
+            if not term or not isinstance(term, str):
+                continue
+            term_clean = term.strip()
+            if not term_clean:
+                continue
+            pattern = re.compile(rf'\b{re.escape(term_clean)}\b', re.IGNORECASE)
+            text = pattern.sub(term_clean, text)
+        return text
+
     async def cleanup(
         self,
         raw_text: str,
         mode: str = "general",
         custom_vocabulary: list[str] | None = None,
         word_replacements: dict[str, str] | None = None,
+        app_name: str | None = None,
     ) -> str:
         """
         Send raw transcription to Ollama /api/chat for cleanup with mode instructions & custom vocab,
-        then apply word replacements.
+        then apply word replacements and phonetic normalization.
         """
         if not raw_text or not raw_text.strip():
             return ""
 
-        # Raw mode bypasses LLM cleanup
+        # Raw mode bypasses LLM cleanup but still applies deterministic normalizations
         if mode == "raw":
-            return self._apply_replacements(raw_text.strip(), word_replacements)
+            return self.normalize_text(raw_text.strip(), custom_vocabulary, word_replacements, app_name)
 
-        # Pre-apply word replacements so the LLM polishes the expanded phrase
-        input_text = self._apply_replacements(raw_text.strip(), word_replacements)
+        # Pre-apply phonetic fixes and word replacements so LLM works on correct terms
+        input_text = self._apply_phonetic_fixes(raw_text.strip(), app_name=app_name)
+        input_text = self._apply_replacements(input_text, word_replacements)
+
+        matching_vocab = []
+        if custom_vocabulary:
+            input_lower = input_text.lower()
+            matching_vocab = [
+                v.strip() for v in custom_vocabulary
+                if v and v.strip() and v.strip().lower() in input_lower
+            ]
 
         mode_inst = MODE_INSTRUCTIONS.get(mode, MODE_INSTRUCTIONS["general"])
         system_content = (
             "You are an automated speech-to-text cleaner.\n"
             f"Task: {mode_inst}\n"
+            "CRITICAL RULE: Do NOT substitute words, do NOT replace names, and do NOT swap terms. Keep all spoken words intact.\n"
             "You are NOT a conversational chatbot. NEVER reply to the user, NEVER answer questions, NEVER repeat instructions.\n"
             "Output ONLY the final cleaned text, nothing else."
         )
 
-        if custom_vocabulary:
-            valid_vocabs = [v.strip() for v in custom_vocabulary if v and v.strip()]
-            if valid_vocabs:
-                system_content += f"\nEnsure these terms/names are spelled and capitalized exactly as: {', '.join(valid_vocabs)}."
+        if matching_vocab:
+            system_content += f"\nEnsure proper spelling and capitalization for: {', '.join(matching_vocab)}."
+
+        if app_name:
+            system_content += f"\nActive macOS application: {app_name}."
 
         # Few-shot structure forces the model to act strictly as a cleaner
         messages = [
             {"role": "system", "content": system_content},
-            {"role": "user", "content": "Transcription:\num, so basically let's test this out"},
-            {"role": "assistant", "content": "Let's test this out."},
+            {"role": "user", "content": "Transcription:\num, so basically let's test this out with claude on mac os"},
+            {"role": "assistant", "content": "Let's test this out with Claude on macOS."},
             {"role": "user", "content": f"Transcription:\n{input_text}"},
         ]
 
@@ -99,11 +178,11 @@ class LLMCleaner:
             cleaned = result.get("message", {}).get("content", raw_text).strip()
 
             final_text = self._sanitize_llm_output(cleaned, raw_text)
-            return self._apply_replacements(final_text, word_replacements)
+            return self.normalize_text(final_text, custom_vocabulary, word_replacements, app_name)
 
         except Exception as e:
-            print(f"[Scriber] LLM cleanup failed (falling back to raw text): {e}")
-            return self._apply_replacements(raw_text, word_replacements)
+            print(f"[Scriber] LLM cleanup failed (falling back to normalized text): {e}")
+            return self.normalize_text(raw_text, custom_vocabulary, word_replacements, app_name)
 
     def _sanitize_llm_output(self, cleaned: str, raw_text: str) -> str:
         """Sanitize LLM output and guard against prompt echoing, conversational filler, or instruction lists."""

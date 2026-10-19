@@ -196,13 +196,13 @@ async def _process_pipeline():
         t_w0 = time.time()
         custom_vocab = state.config.get("custom_vocabulary", [])
         loop = asyncio.get_running_loop()
-        raw_text = await loop.run_in_executor(None, state.transcriber.transcribe, audio_np)
+        raw_text = await loop.run_in_executor(None, state.transcriber.transcribe, audio_np, custom_vocab)
         t_whisper = time.time() - t_w0
 
         # Anti-hallucination guard 1: If raw text is just an echoing of the custom vocabulary list, discard it
         if raw_text and custom_vocab:
             words = [w.strip().lower() for w in re.split(r'[,.\s]+', raw_text) if w.strip()]
-            vocab_set = {w.strip().lower() for v in custom_vocab for w in v.split()}
+            vocab_set = {w.strip().lower() for v in custom_vocab for w in v.split()} | {"vocabulary"}
             if words and all(w in vocab_set for w in words) and len(set(words)) >= len(vocab_set) * 0.7:
                 print(f"[Scriber] ⚠️ Discarded prompt hallucination: '{raw_text[:60]}'")
                 raw_text = ""
@@ -230,6 +230,7 @@ async def _process_pipeline():
         cleaned_text = raw_text
         t_llm = 0.0
         word_reps = state.config.get("word_replacements", {})
+        app_name = state.current_app.get("name") if state.current_app else None
         if state.config.get("llm_cleanup_enabled", True) and state.current_mode != "raw":
             t_l0 = time.time()
             try:
@@ -238,13 +239,24 @@ async def _process_pipeline():
                     mode=state.current_mode,
                     custom_vocabulary=custom_vocab,
                     word_replacements=word_reps,
+                    app_name=app_name,
                 )
             except Exception as e:
-                print(f"[Scriber] LLM cleanup error (using raw text): {e}")
-                cleaned_text = state.cleaner._apply_replacements(raw_text, word_reps)
+                print(f"[Scriber] LLM cleanup error (using normalized text): {e}")
+                cleaned_text = state.cleaner.normalize_text(
+                    raw_text,
+                    custom_vocabulary=custom_vocab,
+                    word_replacements=word_reps,
+                    app_name=app_name,
+                )
             t_llm = time.time() - t_l0
         else:
-            cleaned_text = state.cleaner._apply_replacements(raw_text, word_reps)
+            cleaned_text = state.cleaner.normalize_text(
+                raw_text,
+                custom_vocabulary=custom_vocab,
+                word_replacements=word_reps,
+                app_name=app_name,
+            )
 
         # 4. Instant native paste into active app (sub-millisecond AppKit + Quartz with clipboard restore)
         if state.config.get("auto_paste", True):

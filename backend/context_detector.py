@@ -51,6 +51,11 @@ BUNDLE_ID_MAP = {
     "com.microsoft.teams2": ("Teams", "chat", "💬"),
     "com.skype.skype": ("Skype", "chat", "💬"),
 
+    # AI Assistants & LLMs
+    "com.anthropic.claudefordesktop": ("Claude", "chat", "🤖"),
+    "com.anthropic.claude-desktop": ("Claude", "chat", "🤖"),
+    "com.openai.chat": ("ChatGPT", "chat", "🤖"),
+
     # Email
     "com.apple.mail": ("Mail", "email", "✉️"),
     "com.microsoft.Outlook": ("Outlook", "email", "✉️"),
@@ -81,7 +86,7 @@ APP_CATEGORIES = {
         "mail", "outlook", "superhuman", "spark", "thunderbird"
     },
     "chat": {
-        "slack", "discord", "messages", "telegram", "whatsapp", "teams", "signal", "skype"
+        "slack", "discord", "messages", "telegram", "whatsapp", "teams", "signal", "skype", "claude", "chatgpt"
     },
     "notes": {
         "notes", "notion", "obsidian", "word", "pages", "textedit", "bear", "craft"

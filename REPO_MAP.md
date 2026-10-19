@@ -63,7 +63,10 @@
     - `def __init__(self, model, host)`
     - `def _get_client(self)`
     - `async def aclose(self)`
-    - `async def cleanup(self, raw_text, mode, custom_vocabulary, word_replacements)`
+    - `def normalize_text(self, text, custom_vocabulary, word_replacements, app_name)`
+    - `def _apply_phonetic_fixes(self, text, app_name)`
+    - `def _apply_custom_vocab(self, text, custom_vocabulary)`
+    - `async def cleanup(self, raw_text, mode, custom_vocabulary, word_replacements, app_name)`
     - `def _sanitize_llm_output(self, cleaned, raw_text)`
     - `def _apply_replacements(self, text, replacements)`
     - `async def check_connection(self)`
@@ -96,7 +99,8 @@
     - `def __init__(self, model_size)`
     - `def is_ready(self)`
     - `def load_model(self, model_size)`
-    - `def transcribe(self, audio_source)`
+    - `def _build_initial_prompt(self, custom_vocabulary)`
+    - `def transcribe(self, audio_source, custom_vocabulary)`
 
 ## ⚡ Electron & Frontend (`main.js`, `preload.js`, `src/`)
 

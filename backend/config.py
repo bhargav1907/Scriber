@@ -20,7 +20,10 @@ DEFAULT_CONFIG = {
     "sound_effects": True,
     "input_device": None,
     "dictation_mode": "auto",  # auto, browser, general, email, code, notes, chat, raw
-    "custom_vocabulary": ["Scriber", "Bhargav", "Kivi", "Ollama", "Whisper", "Apple Silicon", "MLX"],
+    "custom_vocabulary": [
+        "Scriber", "Bhargav", "Kivi", "Claude", "Anthropic",
+        "ChatGPT", "Ollama", "Whisper", "Apple Silicon", "MLX", "GitHub"
+    ],
     "word_replacements": {"btw": "by the way", "lgtm": "Looks good to me!"},
     "audio_ducking": False,
 }
@@ -45,6 +48,12 @@ def load_config() -> dict:
             for key, value in DEFAULT_CONFIG.items():
                 if key not in config:
                     config[key] = value
+            # Ensure essential default vocabulary terms exist in custom_vocabulary
+            if isinstance(config.get("custom_vocabulary"), list):
+                existing_lower = {v.lower().strip() for v in config["custom_vocabulary"] if isinstance(v, str)}
+                for term in DEFAULT_CONFIG["custom_vocabulary"]:
+                    if term.lower().strip() not in existing_lower:
+                        config["custom_vocabulary"].append(term)
             return config
         except (json.JSONDecodeError, IOError):
             pass

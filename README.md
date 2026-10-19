@@ -13,7 +13,7 @@ Everything runs **100% locally on your Mac**. No cloud APIs, no subscriptions, a
 - **📋 Sub-Millisecond Native Paste & Clipboard Preservation**: Injects text in <0.5ms via native AppKit `NSPasteboard` and Quartz `CGEventPost` (`Cmd+V`), while automatically saving and restoring your prior copied clipboard content in the background.
 - **⌨️ Physical `Fn` Key Integration**: Intercepts the hardware `Fn` key via a low-level Quartz `kCGHIDEventTap` (keycode 63) while suppressing the macOS emoji picker, featuring automatic recovery when waking your Mac from sleep.
 - **🔒 Apple-Grade Security & Privacy**: Strict localhost CORS isolation, atomic file persistence, Content Security Policy (CSP), and user-only POSIX permissions (`0700`/`0600`) ensure your speech history is completely protected.
-- **🎯 Custom Vocabulary**: Biases acoustic decoding and local LLM formatting towards personal names, company brands, and technical terms.
+- **🎯 Custom Vocabulary & Phonetic Normalization**: Dual-stage acoustic decoder priming (`initial_prompt`) and context-aware phonetic homophone repair eliminate speech recognition mishearings for proper nouns, developer tools, and AI models (Claude, ChatGPT, Ollama, PyTorch, etc.).
 - **⏩ Shorthand Replacements**: Instant expansion of triggers (e.g., `btw` → `by the way`, `lgtm` → `Looks good to me!`).
 - **🎧 Dynamic CoreAudio Mic Switching**: Automatically shifts input whenever your Bluetooth headphones (AirPods, Bose, etc.) connect or disconnect.
 - **🔇 Audio Ducking**: Optionally lowers system music and video volume while speaking to eliminate speaker bleed.
