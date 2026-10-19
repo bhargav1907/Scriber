@@ -6,7 +6,10 @@ strict POSIX privacy permissions, and SQL-level aggregation.
 
 import os
 import sqlite3
-from config import DB_FILE
+try:
+    from backend.config import DB_FILE
+except ImportError:
+    from config import DB_FILE
 
 
 def _connect():

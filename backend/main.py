@@ -15,19 +15,28 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from config import load_config, save_config
-from database import init_db, save_transcription, get_history, delete_transcription, clear_history, get_stats
-from audio_recorder import AudioRecorder
-from transcriber import Transcriber
-from llm_cleaner import LLMCleaner
-from clipboard import paste_text
-from fn_listener import FnKeyListener
-from context_detector import get_frontmost_app
-from audio_ducker import AudioDucker
 try:
-    from streaming_transcriber import StreamingTranscriber
-except ImportError:
+    from backend.config import load_config, save_config
+    from backend.database import init_db, save_transcription, get_history, delete_transcription, clear_history, get_stats
+    from backend.audio_recorder import AudioRecorder
+    from backend.transcriber import Transcriber
+    from backend.llm_cleaner import LLMCleaner
+    from backend.clipboard import paste_text
+    from backend.fn_listener import FnKeyListener
+    from backend.context_detector import get_frontmost_app
+    from backend.audio_ducker import AudioDucker
     from backend.streaming_transcriber import StreamingTranscriber
+except ImportError:
+    from config import load_config, save_config
+    from database import init_db, save_transcription, get_history, delete_transcription, clear_history, get_stats
+    from audio_recorder import AudioRecorder
+    from transcriber import Transcriber
+    from llm_cleaner import LLMCleaner
+    from clipboard import paste_text
+    from fn_listener import FnKeyListener
+    from context_detector import get_frontmost_app
+    from audio_ducker import AudioDucker
+    from streaming_transcriber import StreamingTranscriber
 
 
 # ---------------------------------------------------------------------------
