@@ -22,9 +22,9 @@ class TestStreamingPipeline(unittest.TestCase):
         st = StreamingTranscriber(
             transcriber=MockTranscriber(),
             cleaner=MockCleaner(),
-            delivery_mode="paste_on_finish",
         )
-        self.assertEqual(st.delivery_mode, "paste_on_finish")
+        self.assertIsNotNone(st.transcriber)
+        self.assertIsNotNone(st.cleaner)
 
     def test_silence_detection(self):
         st = StreamingTranscriber(
@@ -39,7 +39,6 @@ class TestStreamingPipeline(unittest.TestCase):
         st = StreamingTranscriber(
             transcriber=MockTranscriber("scriber test"),
             cleaner=MockCleaner(),
-            delivery_mode="paste_on_finish",
             llm_enabled=False,
         )
         audio = np.zeros(16000, dtype=np.float32)
@@ -54,7 +53,6 @@ class TestStreamingPipeline(unittest.TestCase):
         st = StreamingTranscriber(
             transcriber=MockTranscriber("Thanks for watching!"),
             cleaner=MockCleaner(),
-            delivery_mode="paste_on_finish",
         )
         audio = np.zeros(16000, dtype=np.float32)
         result = asyncio.run(st.finalize(audio, auto_paste=False))

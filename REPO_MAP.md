@@ -29,7 +29,6 @@
   > Scriber — High-Performance Native macOS Clipboard & Paste
   - `def _restore_clipboard_string(prev_text)`
   - `def paste_text(text, restore_previous, restore_delay)`
-  - `def type_text(text)`
 
 ### `backend/config.py`
   > Scriber — Configuration Management
@@ -98,7 +97,7 @@
 ### `backend/streaming_transcriber.py`
   > Scriber — Dictation Pipeline Orchestrator
   - **class `StreamingTranscriber`**
-    - `def __init__(self, transcriber, cleaner, delivery_mode, custom_vocabulary, word_replacements, app_name, mode, llm_enabled)`
+    - `def __init__(self, transcriber, cleaner, custom_vocabulary, word_replacements, app_name, mode, llm_enabled)`
     - `def _is_silence_or_hallucination(self, text)`
     - `async def finalize(self, full_audio_np, auto_paste)`
 

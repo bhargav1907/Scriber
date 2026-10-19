@@ -120,31 +120,3 @@ def paste_text(text: str, restore_previous: bool = True, restore_delay: float = 
         print(f"[Scriber] Paste failed: {e}")
         return False
 
-
-def type_text(text: str) -> bool:
-    """
-    Directly type Unicode characters into the frontmost focused application
-    using macOS Quartz CGEventKeyboardSetUnicodeString without touching system clipboard.
-    Emits text in 20-character unicode event chunks for maximum speed (<1ms).
-    """
-    if not text:
-        return False
-
-    if HAS_NATIVE:
-        try:
-            # Quartz supports up to 20 UTF-16 units per keyboard event
-            for i in range(0, len(text), 20):
-                chunk = text[i:i + 20]
-                event_down = Quartz.CGEventCreateKeyboardEvent(None, 0, True)
-                event_up = Quartz.CGEventCreateKeyboardEvent(None, 0, False)
-                Quartz.CGEventKeyboardSetUnicodeString(event_down, len(chunk), chunk)
-                Quartz.CGEventKeyboardSetUnicodeString(event_up, len(chunk), chunk)
-                Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_down)
-                Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_up)
-            return True
-        except Exception as e:
-            print(f"[Scriber] Native typing warning ({e}), falling back to paste...")
-
-    # Fallback to paste if Quartz typing fails
-    return paste_text(text, restore_previous=False)
-

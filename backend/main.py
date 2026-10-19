@@ -140,8 +140,7 @@ async def start_recording():
         await broadcast({"type": "state", "state": "idle"})
         return
 
-    # Initialize and start concurrent streaming transcriber
-    delivery_mode = state.config.get("delivery_mode", "paste_on_finish")
+    # Initialize and start dictation pipeline orchestrator
     llm_enabled = state.config.get("llm_cleanup_enabled", True)
     custom_vocab = state.config.get("custom_vocabulary", [])
     word_reps = state.config.get("word_replacements", {})
@@ -150,7 +149,6 @@ async def start_recording():
     state.streaming_transcriber = StreamingTranscriber(
         transcriber=state.transcriber,
         cleaner=state.cleaner,
-        delivery_mode=delivery_mode,
         custom_vocabulary=custom_vocab,
         word_replacements=word_reps,
         app_name=app_name,
@@ -164,7 +162,7 @@ async def start_recording():
         "active_app": state.current_app,
         "mode": state.current_mode,
     })
-    print(f"[Scriber] 🎤 Recording started (App: {state.current_app['name']}, Mode: {state.current_mode}, Delivery: {delivery_mode})")
+    print(f"[Scriber] 🎤 Recording started (App: {state.current_app['name']}, Mode: {state.current_mode})")
 
 
 async def stop_recording():
@@ -266,7 +264,6 @@ async def _process_pipeline():
                 "whisper_ms": whisper_ms,
                 "llm_ms": llm_ms,
                 "total_ms": total_ms,
-                "delivery_mode": state.config.get("delivery_mode", "paste_on_finish"),
                 "llm_enabled": state.config.get("llm_cleanup_enabled", True),
             },
         })
@@ -378,7 +375,6 @@ ALLOWED_CONFIG_TYPES = {
     "auto_paste": (bool,),
     "custom_vocabulary": (list,),
     "word_replacements": (dict,),
-    "delivery_mode": (str,),
     "sound_effects": (bool,),
 }
 

@@ -43,22 +43,23 @@ class TestApiEndpoints(unittest.TestCase):
         get_res = self.client.get("/api/config")
         self.assertEqual(get_res.status_code, 200)
         initial_cfg = get_res.json()
-        self.assertIn("delivery_mode", initial_cfg)
+        self.assertIn("whisper_model", initial_cfg)
+        self.assertIn("llm_cleanup_enabled", initial_cfg)
 
-        # 2. POST update config with delivery_mode
+        # 2. POST update config
         update_payload = {
-            "delivery_mode": "live_typing",
+            "dictation_mode": "code",
             "llm_cleanup_enabled": False,
         }
         post_res = self.client.post("/api/config", json=update_payload)
         self.assertEqual(post_res.status_code, 200)
         updated_cfg = post_res.json()
-        self.assertEqual(updated_cfg["delivery_mode"], "live_typing")
+        self.assertEqual(updated_cfg["dictation_mode"], "code")
         self.assertEqual(updated_cfg["llm_cleanup_enabled"], False)
 
         # Revert back to original
         self.client.post("/api/config", json={
-            "delivery_mode": initial_cfg.get("delivery_mode", "paste_on_finish"),
+            "dictation_mode": initial_cfg.get("dictation_mode", "auto"),
             "llm_cleanup_enabled": initial_cfg.get("llm_cleanup_enabled", True),
         })
 

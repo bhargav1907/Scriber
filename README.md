@@ -10,12 +10,9 @@ Everything runs **100% locally on your Mac**. No cloud APIs, no subscriptions, a
 
 - **⚡ Apple Silicon Metal GPU (~0.6s)**: Uses Apple MLX Metal GPU unified memory (`whisper-large-v3-turbo`) with zero-disk in-memory audio buffers for instant transcription.
 - **🛡️ Full-Attention Acoustic Fidelity**: Processes complete speech utterances through Whisper's transformer attention matrix in unified memory without destructive temporal slicing, eliminating word-chopping and repetition hallucinations.
-- **⌨️ Dual Delivery Modes**:
-  - **📋 Paste on Finish**: Pastes transcription in `<0.5ms` via native AppKit `Cmd+V` upon key release with automatic clipboard preservation.
-  - **⌨️ Direct Typing**: Emits Unicode keystrokes directly into whichever window has focus via macOS Quartz `CGEventKeyboardSetUnicodeString` without touching the clipboard.
+- **📋 Sub-Millisecond Native Paste & Clipboard Preservation**: Injects transcribed text in `<0.5ms` via native AppKit `NSPasteboard` and Quartz `CGEventPost` (`Cmd+V`), while automatically saving and restoring your prior copied clipboard content in the background.
 - **⏱️ Live Latency Benchmarking**: Real-time millisecond metrics rendered on the floating HUD and dashboard (`⚡ 250ms (Whisper: 115ms · LLM: 135ms)` vs `⚡ 75ms (LLM bypassed)`) so you can measure local AI overhead instantly.
 - **✨ In-Process App Context Detection (<1ms)**: Leverages `NSWorkspace` and reverse-DNS bundle IDs (`com.microsoft.VSCode`, `com.anthropic.claudefordesktop`, `com.google.antigravity-ide`, `com.brave.Browser`, `com.apple.mail`) to automatically tailor formatting, code styling, and tone for the active app.
-- **📋 Sub-Millisecond Native Paste & Clipboard Preservation**: Injects text in <0.5ms via native AppKit `NSPasteboard` and Quartz `CGEventPost` (`Cmd+V`), while automatically saving and restoring your prior copied clipboard content in the background.
 - **⌨️ Physical `Fn` Key Integration**: Intercepts the hardware `Fn` key via a low-level Quartz `kCGHIDEventTap` (keycode 63) while suppressing the macOS emoji picker, featuring automatic recovery when waking your Mac from sleep.
 - **🔒 Apple-Grade Security & Privacy**: Strict localhost CORS isolation, atomic file persistence, Content Security Policy (CSP), and user-only POSIX permissions (`0700`/`0600`) ensure your speech history is completely protected.
 - **🎯 Custom Vocabulary & Phonetic Normalization**: Dual-stage acoustic decoder priming (`initial_prompt`) and context-aware phonetic homophone repair eliminate speech recognition mishearings for proper nouns, developer tools, and AI models (Claude, ChatGPT, Ollama, PyTorch, etc.).
@@ -41,16 +38,11 @@ Everything runs **100% locally on your Mac**. No cloud APIs, no subscriptions, a
         ▼ (full-attention acoustic transcript + anti-hallucination filter)
 [ Local AI Polisher (backend/llm_cleaner.py) ] ──▶ Ollama /api/chat (persistent keep-alive connection reuse)
         │
-        ├───────────────────────────────────────────────────────┐
-        ▼ (live_typing mode)                                    ▼ (paste_on_finish mode)
-[ Quartz Native Unicode Typing ]                         [ Clipboard Native Paste ]
-  CGEventKeyboardSetUnicodeString                          AppKit + Quartz Cmd+V (<0.5ms)
-  Direct to focused window cursor                          + automatic clipboard restoration
-        │                                                       │
-        └───────────────────────────┬───────────────────────────┘
-                                    │
-                                    ▼ (WebSocket state & latency events)
-                         [ Floating HUD & Dashboard ] ──▶ (W: 115ms · L: 135ms · Total: 250ms)
+        ▼ (instantaneous paste)
+[ Clipboard Native Paste (backend/clipboard.py) ] ──▶ AppKit + Quartz Cmd+V (<0.5ms) + restore
+        │
+        ▼ (WebSocket state & latency events)
+[ Floating HUD & Dashboard ] ──▶ (W: 115ms · L: 135ms · Total: 250ms)
 ```
 
 ---

@@ -135,7 +135,7 @@ function setState(state, extra = {}) {
     case 'done':
       widget.classList.add('visible', 'state-done');
       dot.classList.add('done');
-      text.textContent = extra.metrics?.delivery_mode === 'live_typing' ? 'Typed!' : 'Pasted!';
+      text.textContent = 'Pasted!';
       stopTimer();
 
       if (extra.metrics) {

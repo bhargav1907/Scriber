@@ -2,7 +2,7 @@
 Scriber — Dictation Pipeline Orchestrator
 Transcribes complete, pristine audio waveforms on Apple Silicon Metal GPU Whisper,
 executes contextual LLM cleanup or fast phonetic normalization, delivers text via
-Quartz direct keystrokes or AppKit native Cmd+V, and collects precise latency benchmarks.
+instantaneous native AppKit Cmd+V (<0.5ms), and collects precise latency benchmarks.
 """
 
 import time
@@ -10,9 +10,9 @@ import re
 import numpy as np
 
 try:
-    from backend.clipboard import paste_text, type_text
+    from backend.clipboard import paste_text
 except ImportError:
-    from clipboard import paste_text, type_text
+    from clipboard import paste_text
 
 
 SILENCE_PHRASES = {
@@ -30,13 +30,12 @@ class StreamingTranscriber:
     """
     Scriber dictation pipeline orchestrator.
     Manages end-to-end full-waveform transcription, acoustic anti-hallucination defense,
-    contextual LLM polishing, delivery routing, and millisecond latency profiling.
+    contextual LLM polishing, native paste delivery, and millisecond latency profiling.
     """
     def __init__(
         self,
         transcriber,
         cleaner,
-        delivery_mode: str = "paste_on_finish",
         custom_vocabulary: list[str] | None = None,
         word_replacements: dict[str, str] | None = None,
         app_name: str | None = None,
@@ -45,7 +44,6 @@ class StreamingTranscriber:
     ):
         self.transcriber = transcriber
         self.cleaner = cleaner
-        self.delivery_mode = delivery_mode  # "paste_on_finish" | "live_typing"
         self.custom_vocabulary = custom_vocabulary or []
         self.word_replacements = word_replacements or {}
         self.app_name = app_name
@@ -77,7 +75,7 @@ class StreamingTranscriber:
         """
         Transcribe complete, unchopped audio on Apple Silicon Metal GPU Whisper,
         perform contextual LLM cleanup or phonetic normalization, deliver via
-        the configured delivery mode (Quartz direct typing or AppKit paste),
+        native AppKit Cmd+V paste with clipboard restoration (<0.5ms),
         and return exact millisecond latency benchmarks.
         """
         if full_audio_np is None or len(full_audio_np) == 0:
@@ -87,7 +85,6 @@ class StreamingTranscriber:
                 "whisper_ms": 0,
                 "llm_ms": 0,
                 "total_ms": 0,
-                "delivery_mode": self.delivery_mode,
                 "llm_enabled": self.llm_enabled,
             }
 
@@ -113,7 +110,6 @@ class StreamingTranscriber:
                 "whisper_ms": whisper_ms,
                 "llm_ms": 0,
                 "total_ms": whisper_ms,
-                "delivery_mode": self.delivery_mode,
                 "llm_enabled": self.llm_enabled,
             }
 
@@ -150,20 +146,12 @@ class StreamingTranscriber:
 
         total_ms = whisper_ms + llm_ms
 
-        # 4. Reliable Text Delivery
+        # 4. Reliable Text Delivery via Native AppKit Cmd+V (<0.5ms) with clipboard preservation
         if auto_paste and cleaned_text and cleaned_text.strip():
-            if self.delivery_mode == "live_typing":
-                # Direct Quartz keystrokes into active focused window (no clipboard overwrite)
-                try:
-                    type_text(cleaned_text)
-                except Exception as e:
-                    print(f"[Scriber] Live typing error: {e}")
-            else:
-                # Instantaneous AppKit Cmd+V paste with clipboard restoration (<0.5ms)
-                try:
-                    paste_text(cleaned_text)
-                except Exception as e:
-                    print(f"[Scriber] Paste text error: {e}")
+            try:
+                paste_text(cleaned_text)
+            except Exception as e:
+                print(f"[Scriber] Paste text error: {e}")
 
         return {
             "raw_text": raw_text,
@@ -171,6 +159,5 @@ class StreamingTranscriber:
             "whisper_ms": whisper_ms,
             "llm_ms": llm_ms,
             "total_ms": total_ms,
-            "delivery_mode": self.delivery_mode,
             "llm_enabled": self.llm_enabled,
         }
