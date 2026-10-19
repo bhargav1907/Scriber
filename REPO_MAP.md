@@ -29,6 +29,7 @@
   > Scriber — High-Performance Native macOS Clipboard & Paste
   - `def _restore_clipboard_string(prev_text)`
   - `def paste_text(text, restore_previous, restore_delay)`
+  - `def type_text(text)`
 
 ### `backend/config.py`
   > Scriber — Configuration Management
@@ -92,6 +93,18 @@
   - `async def api_clear()` [@app.delete]
   - `async def api_get_config()` [@app.get]
   - `async def api_update_config(body)` [@app.post]
+
+### `backend/streaming_transcriber.py`
+  > Scriber — Streaming Transcription Manager
+  - **class `StreamingTranscriber`**
+    - `def __init__(self, transcriber, cleaner, delivery_mode, custom_vocabulary, word_replacements, app_name, mode, llm_enabled)`
+    - `def start(self)`
+    - `def reset(self)`
+    - `def get_accumulated_text(self)`
+    - `def on_chunk(self, chunk, is_final)`
+    - `def _calculate_delta(self, prev, current)`
+    - `def _process_chunks(self)`
+    - `async def finalize(self, full_audio_np, auto_paste)`
 
 ### `backend/transcriber.py`
   > Scriber — Whisper Transcription Engine

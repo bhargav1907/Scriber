@@ -9,7 +9,12 @@ Everything runs **100% locally on your Mac**. No cloud APIs, no subscriptions, a
 ## ⚡ Highlights
 
 - **⚡ Apple Silicon Metal GPU (~0.6s)**: Uses Apple MLX Metal GPU unified memory (`whisper-large-v3-turbo`) with zero-disk in-memory audio buffers for instant transcription.
-- **✨ In-Process App Context Detection (<1ms)**: Leverages `NSWorkspace` and reverse-DNS bundle IDs (`com.microsoft.VSCode`, `com.google.antigravity-ide`, `com.brave.Browser`, `com.apple.mail`) to automatically tailor formatting, code styling, and tone for the active app.
+- **🌊 Real-Time Concurrent Streaming Pipeline**: Processes speech in ~1.0-second VAD windows concurrently while speaking, eliminating post-recording wait upon releasing the hotkey.
+- **⌨️ Dual Delivery Modes**:
+  - **📋 Paste on Finish**: Stages streaming transcription in unified memory and pastes in `<0.5ms` via native AppKit `Cmd+V` upon key release with automatic clipboard preservation.
+  - **⌨️ Live Typing**: Emits Unicode keystrokes directly into whichever window has focus in real time via macOS Quartz `CGEventKeyboardSetUnicodeString` without touching the clipboard.
+- **⏱️ Live Latency Benchmarking**: Real-time millisecond metrics rendered on the floating HUD and dashboard (`⚡ 250ms (Whisper: 115ms · LLM: 135ms)` vs `⚡ 75ms (LLM bypassed)`) so you can measure local AI overhead instantly.
+- **✨ In-Process App Context Detection (<1ms)**: Leverages `NSWorkspace` and reverse-DNS bundle IDs (`com.microsoft.VSCode`, `com.anthropic.claudefordesktop`, `com.google.antigravity-ide`, `com.brave.Browser`, `com.apple.mail`) to automatically tailor formatting, code styling, and tone for the active app.
 - **📋 Sub-Millisecond Native Paste & Clipboard Preservation**: Injects text in <0.5ms via native AppKit `NSPasteboard` and Quartz `CGEventPost` (`Cmd+V`), while automatically saving and restoring your prior copied clipboard content in the background.
 - **⌨️ Physical `Fn` Key Integration**: Intercepts the hardware `Fn` key via a low-level Quartz `kCGHIDEventTap` (keycode 63) while suppressing the macOS emoji picker, featuring automatic recovery when waking your Mac from sleep.
 - **🔒 Apple-Grade Security & Privacy**: Strict localhost CORS isolation, atomic file persistence, Content Security Policy (CSP), and user-only POSIX permissions (`0700`/`0600`) ensure your speech history is completely protected.
@@ -25,22 +30,27 @@ Everything runs **100% locally on your Mac**. No cloud APIs, no subscriptions, a
 ## 🏗️ Architecture & Data Flow
 
 ```
-[ Microphone Audio ] 
+[ Microphone Audio Stream ] 
         │
         ▼ (sounddevice 16kHz PCM stream)
 [ AudioRecorder (backend/audio_recorder.py) ]
         │
-        ▼ (in-memory float32 numpy array — zero disk round-trip)
-[ Transcriber (backend/transcriber.py) ] ──▶ Apple Silicon Metal GPU (mlx-whisper large-v3-turbo, ~0.6s)
+        ▼ (concurrent ~1.0s speech chunks during recording)
+[ StreamingTranscriber (backend/streaming_transcriber.py) ] ──▶ Apple Silicon Metal GPU (mlx-whisper large-v3-turbo)
         │
-        ▼ (raw acoustic transcript)
-[ LLMCleaner (backend/llm_cleaner.py) ] ──▶ Ollama /api/chat (persistent keep-alive connection reuse)
-        │
-        ▼ (polished text)
-[ Clipboard (backend/clipboard.py) ] ────▶ Native AppKit & Quartz CGEventPost Cmd+V (<0.5ms) + restore
-        │
-        ▼ (WebSocket status & level events)
-[ Electron Main (main.js) ] ──────────────▶ IPC bridge (preload.js) ──▶ Renderers (src/widget.js & src/renderer.js)
+        ├────────────────────────────────────────┬───────────────────────────────────────┐
+        ▼ (live_typing mode)                     ▼ (paste_on_finish mode)                │
+[ Quartz Native Unicode Typing ]          [ Local AI Polisher (Ollama) ]                 │
+  CGEventKeyboardSetUnicodeString          Optional formatting & filler removal          │
+  Direct to focused window cursor                │                                       │
+                                                 ▼                                       │
+                                          [ Clipboard Native Paste ]                     │
+                                            AppKit + Quartz Cmd+V (<0.5ms)               │
+                                                 │                                       │
+                                                 └───────────────────┬───────────────────┘
+                                                                     │
+                                                                     ▼ (WebSocket state & latency events)
+                                          [ Floating HUD & Dashboard ] ──▶ (W: 115ms · L: 135ms · Total: 250ms)
 ```
 
 ---
