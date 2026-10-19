@@ -6,15 +6,24 @@ strict POSIX privacy permissions, and SQL-level aggregation.
 
 import os
 import sqlite3
+from pathlib import Path
+
 try:
     from backend.config import DB_FILE
 except ImportError:
     from config import DB_FILE
 
 
-def _connect():
+def _resolve_db_path(db_path: Path | str | None = None) -> Path:
+    if db_path is not None:
+        return Path(db_path)
+    return DB_FILE
+
+
+def _connect(db_path: Path | str | None = None):
     """Connect to SQLite database with WAL mode and resilient busy timeout."""
-    conn = sqlite3.connect(str(DB_FILE), timeout=5.0)
+    target_path = _resolve_db_path(db_path)
+    conn = sqlite3.connect(str(target_path), timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL;")
     conn.execute("PRAGMA synchronous = NORMAL;")
@@ -22,15 +31,16 @@ def _connect():
     return conn
 
 
-def init_db():
+def init_db(db_path: Path | str | None = None):
     """Create the transcriptions table, indices, and ensure privacy permissions."""
-    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    target_path = _resolve_db_path(db_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        os.chmod(DB_FILE.parent, 0o700)
+        os.chmod(target_path.parent, 0o700)
     except Exception:
         pass
 
-    conn = _connect()
+    conn = _connect(target_path)
     with conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS transcriptions (
@@ -46,16 +56,22 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_transcriptions_timestamp ON transcriptions(timestamp);")
     conn.close()
 
-    if DB_FILE.exists():
+    if target_path.exists():
         try:
-            os.chmod(DB_FILE, 0o600)
+            os.chmod(target_path, 0o600)
         except Exception:
             pass
 
 
-def save_transcription(raw_text: str, cleaned_text: str, duration: float, model: str) -> int:
+def save_transcription(
+    raw_text: str,
+    cleaned_text: str,
+    duration: float,
+    model: str,
+    db_path: Path | str | None = None,
+) -> int:
     """Save a transcription and return its ID."""
-    conn = _connect()
+    conn = _connect(db_path)
     with conn:
         cursor = conn.execute(
             "INSERT INTO transcriptions (raw_text, cleaned_text, duration_seconds, whisper_model) VALUES (?, ?, ?, ?)",
@@ -66,9 +82,9 @@ def save_transcription(raw_text: str, cleaned_text: str, duration: float, model:
     return row_id
 
 
-def get_history(limit: int = 100, offset: int = 0) -> list[dict]:
+def get_history(limit: int = 100, offset: int = 0, db_path: Path | str | None = None) -> list[dict]:
     """Fetch transcription history, most recent first."""
-    conn = _connect()
+    conn = _connect(db_path)
     rows = conn.execute(
         "SELECT id, raw_text, cleaned_text, duration_seconds, whisper_model, timestamp FROM transcriptions ORDER BY id DESC LIMIT ? OFFSET ?",
         (limit, offset),
@@ -77,23 +93,23 @@ def get_history(limit: int = 100, offset: int = 0) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def delete_transcription(row_id: int) -> None:
-    conn = _connect()
+def delete_transcription(row_id: int, db_path: Path | str | None = None) -> None:
+    conn = _connect(db_path)
     with conn:
         conn.execute("DELETE FROM transcriptions WHERE id = ?", (row_id,))
     conn.close()
 
 
-def clear_history() -> None:
-    conn = _connect()
+def clear_history(db_path: Path | str | None = None) -> None:
+    conn = _connect(db_path)
     with conn:
         conn.execute("DELETE FROM transcriptions")
     conn.close()
 
 
-def get_stats() -> dict:
+def get_stats(db_path: Path | str | None = None) -> dict:
     """Calculate usage stats using SQL aggregations: total transcriptions, word count, duration, and time saved."""
-    conn = _connect()
+    conn = _connect(db_path)
     summary = conn.execute("""
         SELECT 
             COUNT(*) as total_count,
