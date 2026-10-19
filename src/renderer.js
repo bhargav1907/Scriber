@@ -525,8 +525,8 @@ function applyConfig(config) {
     if (btnDelivLive) btnDelivLive.classList.toggle('active', isLive);
     if (deliveryModeDesc) {
       deliveryModeDesc.textContent = isLive
-        ? 'Active: Real-time typing directly into focused window (~0ms delay)'
-        : 'Active: Streaming background transcription with instant paste (<150ms delay)';
+        ? 'Active: Direct Quartz Unicode keystrokes into focused window (clipboard preserved)'
+        : 'Active: Full-attention Metal GPU transcription with instant paste (<0.5ms)';
     }
   }
 
@@ -548,7 +548,7 @@ btnDelivPaste?.addEventListener('click', () => {
   btnDelivLive?.classList.remove('active');
   sendConfigUpdate('delivery_mode', 'paste_on_finish');
   if (deliveryModeDesc) {
-    deliveryModeDesc.textContent = 'Active: Streaming background transcription with instant paste (<150ms delay)';
+    deliveryModeDesc.textContent = 'Active: Full-attention Metal GPU transcription with instant paste (<0.5ms)';
   }
   showToast('Delivery: Paste on Finish');
 });
@@ -558,7 +558,7 @@ btnDelivLive?.addEventListener('click', () => {
   btnDelivPaste?.classList.remove('active');
   sendConfigUpdate('delivery_mode', 'live_typing');
   if (deliveryModeDesc) {
-    deliveryModeDesc.textContent = 'Active: Real-time typing directly into focused window (~0ms delay)';
+    deliveryModeDesc.textContent = 'Active: Direct Quartz Unicode keystrokes into focused window (clipboard preserved)';
   }
   showToast('Delivery: Live Typing');
 });
