@@ -23,5 +23,22 @@ class TestAudioRecorder(unittest.TestCase):
         self.assertGreater(len(levels), 0)
         self.assertGreater(levels[0], 0.0)
 
+    def test_process_audio_resampling(self):
+        rec = AudioRecorder(sample_rate=16000)
+        # Simulate recording at 48000 Hz for 1 second (48000 samples)
+        rec.active_sample_rate = 48000
+        rec.audio_chunks = [np.ones((48000, 1), dtype=np.float32) * 0.5]
+
+        audio_np, filepath = rec._process_audio()
+        self.assertIsNotNone(audio_np)
+        # Should be resampled to 16000 samples
+        self.assertEqual(len(audio_np), 16000)
+
+    def test_device_query(self):
+        devices = AudioRecorder.get_input_devices()
+        self.assertIsInstance(devices, dict)
+        self.assertIn("devices", devices)
+        self.assertIn("default_name", devices)
+
 if __name__ == "__main__":
     unittest.main()
