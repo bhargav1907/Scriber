@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
     ],
     "word_replacements": {"btw": "by the way", "lgtm": "Looks good to me!"},
     "audio_ducking": False,
+    "delivery_mode": "paste_on_finish",  # paste_on_finish, live_typing
 }
 
 
