@@ -8,3 +8,6 @@ Refer to [`AGENTS.md`](./AGENTS.md) for full architectural guidelines, navigatio
 3. **Use LSP (`code-lsp`) for Precision**: Use `go_to_definition` and `find_references` instead of raw text regex.
 4. **Local & Private**: Everything runs locally on Apple Silicon (MLX Metal GPU Whisper + Ollama).
 5. **Keep `README.md` Synchronized**: Update `README.md` whenever significant architectural, security, performance, or UI improvements occur.
+6. **Attentional Anchoring & Question-First**: Resolve the user's immediate question or visual artifact first before executing any secondary work. Never initiate unasked refactorings.
+7. **Targeted Scope Slicing**: Files > 150 lines MUST use `StartLine`/`EndLine` around target functions found in `REPO_MAP.md`. No blind full-file dumps.
+8. **Quiet Test Invariant**: Run tests in quiet mode (`-q`) targeting specific methods to prevent stdout context bloat.

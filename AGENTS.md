@@ -86,3 +86,23 @@ backend/venv/bin/python3 -c "import mlx_whisper; print('MLX ready')"
 - **Git commits**: Always commit clean, descriptive atomic changes with conventional commit prefixes (`feat:`, `fix:`, `refactor:`, `docs:`).
 - **Keep `README.md` Synchronized**: Whenever a significant feature, optimization, architecture upgrade, or security change is introduced, inspect [`README.md`](./README.md) and update it to clearly showcase the new capability, metrics, shortcuts, and architecture.
 
+---
+
+## 🛑 6. Attentional Anchoring & Anti-Scope-Creep Protocol
+
+To prevent context bloat, goal drift, and accidental multi-minute detours:
+
+1. **Immediate Question-First Anchor**:
+   - When the user asks a specific question, points out a bug, or provides a screenshot, solve and answer THAT specific item FIRST.
+   - NEVER initiate unasked background refactorings, test-suite creations, or architectural overhauls when responding to a targeted question.
+2. **Visual Artifact Priority**:
+   - If an image or screenshot is provided, the very first action MUST be inspecting and directly addressing that visual artifact.
+3. **Proportional Effort (YAGNI)**:
+   - A single-point fix (e.g., removing an obsolete setting or updating a label) must take $\le$ 1–2 tool calls.
+   - Do NOT write new multi-file test suites, documentation plans, or refactorings unless explicitly requested.
+4. **Targeted Scope Slicing (No Blind Whole-File Dumps)**:
+   - **Files $\le$ 150 lines**: Full-file `view_file` is permitted for complete context.
+   - **Files > 150 lines**: Must look up line ranges in [`REPO_MAP.md`](file:///Users/bhargavsinguluri/Documents/Scriber/REPO_MAP.md) or LSP first, and view ONLY the relevant function block $\pm$ 15 lines with `StartLine`/`EndLine`. Calling `view_file` without line bounds on large files is strictly prohibited.
+5. **Quiet Test Invariant**:
+   - Run tests in quiet mode (`-q`) and target the specific test class/method under test (e.g. `python3 -m unittest -q tests.test_api_endpoints.TestApiEndpoints.test_config_endpoints`) rather than dumping hundreds of lines of stdout into the prompt.
+
