@@ -42,13 +42,14 @@
 
 ### `backend/database.py`
   > Scriber — High-Performance SQLite Database for Transcription History
-  - `def _connect()`
-  - `def init_db()`
-  - `def save_transcription(raw_text, cleaned_text, duration, model)`
-  - `def get_history(limit, offset)`
-  - `def delete_transcription(row_id)`
-  - `def clear_history()`
-  - `def get_stats()`
+  - `def _resolve_db_path(db_path)`
+  - `def _connect(db_path)`
+  - `def init_db(db_path)`
+  - `def save_transcription(raw_text, cleaned_text, duration, model, db_path)`
+  - `def get_history(limit, offset, db_path)`
+  - `def delete_transcription(row_id, db_path)`
+  - `def clear_history(db_path)`
+  - `def get_stats(db_path)`
 
 ### `backend/fn_listener.py`
   > Scriber — macOS Fn / Globe Key Global Listener
@@ -98,11 +99,6 @@
   > Scriber — Dictation Pipeline Orchestrator
   - **class `StreamingTranscriber`**
     - `def __init__(self, transcriber, cleaner, delivery_mode, custom_vocabulary, word_replacements, app_name, mode, llm_enabled)`
-    - `def start(self)`
-    - `def reset(self)`
-    - `def on_chunk(self, chunk, is_final)`
-    - `def get_accumulated_text(self)`
-    - `def _calculate_delta(self, prev, current)`
     - `def _is_silence_or_hallucination(self, text)`
     - `async def finalize(self, full_audio_np, auto_paste)`
 
