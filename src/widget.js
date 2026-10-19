@@ -24,20 +24,29 @@ let recordStart   = 0;
 let audioCtx = null;
 
 function getAudioContext() {
-  if (!audioCtx) {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (AudioContextClass) audioCtx = new AudioContextClass();
+  try {
+    if (!audioCtx || audioCtx.state === 'closed') {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtx = new AudioContextClass({ latencyHint: 'interactive' });
+      }
+    }
+    return audioCtx;
+  } catch {
+    audioCtx = null;
+    return null;
   }
-  if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
-  return audioCtx;
 }
 
-function playTone(freq, duration = 0.12, vol = 0.05) {
+async function playTone(freq, duration = 0.12, vol = 0.05) {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      await ctx.resume().catch(() => {});
+    }
+    if (ctx.state !== 'running') return;
+
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.connect(gain);

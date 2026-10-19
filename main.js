@@ -39,6 +39,9 @@ const BACKEND_PORT = 58932;
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 const WS_URL = `ws://127.0.0.1:${BACKEND_PORT}/ws`;
 
+// Ensure audio plays reliably in frameless background HUD windows without user gesture blocking
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 // ─── Single Instance Guard ───────────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
