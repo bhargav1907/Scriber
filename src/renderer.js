@@ -70,6 +70,7 @@ function switchView(viewName) {
   if (viewName === 'settings') {
     viewSettings.style.display = '';
     viewHistory.style.display = 'none';
+    viewSettings.scrollTop = 0;
     if (tabSettings) {
       tabSettings.classList.add('active');
       tabSettings.setAttribute('aria-selected', 'true');
@@ -81,6 +82,7 @@ function switchView(viewName) {
   } else {
     viewSettings.style.display = 'none';
     viewHistory.style.display = '';
+    viewHistory.scrollTop = 0;
     if (tabHistory) {
       tabHistory.classList.add('active');
       tabHistory.setAttribute('aria-selected', 'true');

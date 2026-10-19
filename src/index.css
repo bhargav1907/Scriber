@@ -330,7 +330,7 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 10px 28px;
-  margin: 0 20px;
+  margin: 0 20px 10px;
   background: var(--bg-card);
   backdrop-filter: blur(12px);
   border-radius: var(--radius-lg);
@@ -679,14 +679,15 @@ kbd {
 /* ── Settings View ────────────────────────────────────────────────── */
 
 .settings-view {
-  padding: 16px 28px;
+  padding: 16px 20px 48px;
 }
 
 .settings-panel {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 560px;
+  width: 100%;
+  max-width: 100%;
 }
 
 .settings-group {
