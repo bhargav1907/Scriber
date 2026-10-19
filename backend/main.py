@@ -378,6 +378,8 @@ ALLOWED_CONFIG_TYPES = {
     "auto_paste": (bool,),
     "custom_vocabulary": (list,),
     "word_replacements": (dict,),
+    "delivery_mode": (str,),
+    "sound_effects": (bool,),
 }
 
 
