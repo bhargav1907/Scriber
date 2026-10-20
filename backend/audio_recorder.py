@@ -14,6 +14,8 @@ except ImportError:
     from config import APP_DIR
 
 
+import os
+import sys
 import threading
 
 class AudioRecorder:
@@ -39,15 +41,35 @@ class AudioRecorder:
 
     @classmethod
     def refresh_devices(cls) -> None:
-        """Force PortAudio to re-enumerate CoreAudio devices so newly connected Bluetooth/USB devices appear."""
+        """Force PortAudio to re-enumerate CoreAudio devices so newly connected Bluetooth/USB devices appear.
+        Silences low-level PortAudio C AUHAL stderr output for dormant virtual devices (Zoom, Virtual Desktop).
+        """
         if cls._is_any_recording:
             return
         with cls._sd_lock:
+            # Temporarily redirect OS-level file descriptor 2 (stderr) to /dev/null
+            saved_stderr = None
+            try:
+                stderr_fd = sys.stderr.fileno()
+                saved_stderr = os.dup(stderr_fd)
+                devnull = os.open(os.devnull, os.O_WRONLY)
+                os.dup2(devnull, stderr_fd)
+                os.close(devnull)
+            except Exception:
+                pass
+
             try:
                 sd._terminate()
                 sd._initialize()
             except Exception as e:
                 print(f"[Scriber] Could not refresh sounddevice: {e}")
+            finally:
+                if saved_stderr is not None:
+                    try:
+                        os.dup2(saved_stderr, sys.stderr.fileno())
+                        os.close(saved_stderr)
+                    except Exception:
+                        pass
 
     @classmethod
     def get_input_devices(cls, force_refresh: bool = False) -> dict:
@@ -88,11 +110,12 @@ class AudioRecorder:
 
     @classmethod
     def check_for_device_changes(cls) -> tuple[bool, dict]:
-        """Check if devices or default input changed. Returns (has_changed, current_devices_dict)."""
+        """Check if devices or default input changed without tearing down PortAudio. Returns (has_changed, current_devices_dict)."""
         if cls._is_any_recording:
             return False, {}
 
-        info = cls.get_input_devices(force_refresh=True)
+        # Query devices directly from CoreAudio without destructive PortAudio teardown
+        info = cls.get_input_devices(force_refresh=False)
         sig = (info.get("default_name"), tuple(d["name"] for d in info.get("devices", [])))
         if cls._last_devices_signature is None:
             cls._last_devices_signature = sig

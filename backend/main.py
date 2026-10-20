@@ -398,7 +398,7 @@ async def ws_endpoint(websocket: WebSocket):
         "whisper_ready": state.transcriber.is_ready,
         "active_app": app_info,
         "mode": state.current_mode,
-        "audio_devices": AudioRecorder.get_input_devices(force_refresh=True),
+        "audio_devices": AudioRecorder.get_input_devices(force_refresh=False),
         "stats": get_stats(),
     })
 
