@@ -105,6 +105,6 @@ To prevent context bloat, goal drift, and accidental multi-minute detours:
    - **Files > 150 lines**: Must look up line ranges in [`REPO_MAP.md`](file:///Users/bhargavsinguluri/Documents/Scriber/REPO_MAP.md) or LSP first, and view ONLY the relevant function block $\pm$ 15 lines with `StartLine`/`EndLine`. Calling `view_file` without line bounds on large files is strictly prohibited.
 5. **Quiet Test Invariant**:
    - Run tests in quiet mode (`-q`) and target the specific test class/method under test (e.g. `python3 -m unittest -q tests.test_api_endpoints.TestApiEndpoints.test_config_endpoints`) rather than dumping hundreds of lines of stdout into the prompt.
-6. **Live Token-Counter Pill Invariant**:
-   - Conclude EVERY assistant response with a dedicated, live token-counter pill badge at the very bottom (e.g., `> ⚡ **420 tokens** | **~0.3s**`) to provide immediate transparency into token consumption and turn latency.
+6. **Token Breakdown Invariant**:
+   - Conclude EVERY assistant response with a dedicated token summary at the very bottom (e.g., `> 📊 **Input Tokens:** ~15.5k | **Output Tokens:** ~380`) detailing input prompt context and generated output tokens without timing or timestamps.
 
