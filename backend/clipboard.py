@@ -65,12 +65,11 @@ def paste_text(text: str, restore_previous: bool = False, restore_delay: float =
             # 50ms pause for macOS pasteboard change notification to propagate across processes
             time.sleep(0.05)
 
-            # Post native Cmd+V keyboard events to both session and HID taps
+            # Post native Cmd+V keyboard events to the focused session event tap
             # Virtual keycode 9 is 'v' on standard macOS keyboards
             event_down = Quartz.CGEventCreateKeyboardEvent(None, 9, True)
             Quartz.CGEventSetFlags(event_down, Quartz.kCGEventFlagMaskCommand)
             Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, event_down)
-            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_down)
 
             # 40ms hold time ensures target application event loops (Electron, Chrome, etc.) register the keypress
             time.sleep(0.04)
@@ -78,7 +77,6 @@ def paste_text(text: str, restore_previous: bool = False, restore_delay: float =
             event_up = Quartz.CGEventCreateKeyboardEvent(None, 9, False)
             Quartz.CGEventSetFlags(event_up, 0)
             Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, event_up)
-            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_up)
 
             # Background thread restores previous clipboard only if requested
             if restore_previous and prev_text is not None and prev_text != text:
