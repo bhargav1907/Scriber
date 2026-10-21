@@ -211,7 +211,7 @@ function updateStatusBadge(state, extra = {}) {
 
 function renderHistory(items) {
   // Clear existing entries (keep empty state)
-  const existing = historyList.querySelectorAll('.history-entry, .date-group');
+  const existing = historyList.querySelectorAll('.history-card, .history-group-header, .history-entry, .date-group');
   existing.forEach(el => el.remove());
 
   if (!items || items.length === 0) {
@@ -238,50 +238,48 @@ function renderHistory(items) {
     if (dateStr !== lastDate) {
       lastDate = dateStr;
       const dateEl = document.createElement('div');
-      dateEl.className = 'date-group';
+      dateEl.className = 'history-group-header';
       dateEl.textContent = dateStr;
       historyList.appendChild(dateEl);
     }
 
     const words = (entry.cleaned_text || '').split(/\s+/).filter(Boolean).length;
     const el = document.createElement('div');
-    el.className = 'history-entry';
+    el.className = 'history-card';
     el.style.animationDelay = `${Math.min(index * 0.03, 0.3)}s`;
+    
+    const copyIconSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+    const trashIconSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
+
     el.innerHTML = `
-      <div class="history-entry-header">
-        <div class="history-entry-meta">
-          <span class="time">${formatTime(ts)}</span>
-          <span class="duration">${entry.duration_seconds || 0}s</span>
-          <span class="words-tag">${words} words</span>
+      <div class="history-card-header">
+        <div class="history-card-meta">
+          <span class="history-time">${formatTime(ts)}</span>
+          <span class="history-pill">${entry.duration_seconds || 0}s</span>
+          <span class="history-pill">${words} words</span>
         </div>
-        <div class="history-entry-actions">
-          <button class="btn-small copy" title="Copy to clipboard">📋</button>
-          <button class="btn-small delete" title="Delete" data-id="${entry.id}">🗑</button>
+        <div class="history-actions">
+          <button class="btn-card-action copy" title="Copy to clipboard">${copyIconSvg}</button>
+          <button class="btn-card-action delete danger" title="Delete entry" data-id="${entry.id}">${trashIconSvg}</button>
         </div>
       </div>
-      <div class="history-entry-text">${escapeHtml(entry.cleaned_text)}</div>
+      <div class="history-text">${escapeHtml(entry.cleaned_text)}</div>
       ${entry.raw_text && entry.raw_text !== entry.cleaned_text
-        ? `<div class="history-entry-raw"><strong>Raw STT:</strong> ${escapeHtml(entry.raw_text)}</div>`
+        ? `<div class="history-card-footer"><span class="history-stats-pill">Raw STT: ${escapeHtml(entry.raw_text)}</span></div>`
         : ''
       }
     `;
-
-    // Toggle raw text diff view on card click
-    el.addEventListener('click', (e) => {
-      if (e.target.closest('.btn-small')) return;
-      el.classList.toggle('expanded');
-    });
 
     // 1-Click Copy with visual checkmark feedback
     const btnCopy = el.querySelector('.copy');
     btnCopy?.addEventListener('click', (e) => {
       e.stopPropagation();
       navigator.clipboard.writeText(entry.cleaned_text);
-      btnCopy.textContent = '✓';
+      btnCopy.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#30d158" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
       btnCopy.classList.add('copied');
       showToast('Copied to clipboard');
       setTimeout(() => {
-        btnCopy.textContent = '📋';
+        btnCopy.innerHTML = copyIconSvg;
         btnCopy.classList.remove('copied');
       }, 1200);
     });
@@ -289,11 +287,11 @@ function renderHistory(items) {
     // Delete
     el.querySelector('.delete')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      el.style.transform = 'translateX(80px)';
+      el.style.transform = 'translateX(60px)';
       el.style.opacity = '0';
       setTimeout(() => {
         window.scriber.deleteEntry(entry.id);
-      }, 250);
+      }, 200);
     });
 
     historyList.appendChild(el);

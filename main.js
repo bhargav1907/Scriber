@@ -234,7 +234,7 @@ function createMainWindow() {
     vibrancy: 'under-window',
     visualEffectState: 'active',
     trafficLightPosition: { x: 18, y: 18 },
-    backgroundColor: '#0a0a14',
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
