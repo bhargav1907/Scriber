@@ -4,8 +4,10 @@ Detects frontmost macOS application using bundle identifiers and WindowServer la
 to enable smart context-aware dictation without getting stuck or fooled by helper processes.
 """
 
+import os
 import subprocess
-from AppKit import NSWorkspace
+from AppKit import NSWorkspace, NSRunningApplication
+from Foundation import NSRunLoop, NSDate
 import Quartz
 
 # Immutable reverse-DNS Bundle Identifier mapping
@@ -106,42 +108,70 @@ APP_ICONS = {
 def get_frontmost_app() -> dict:
     """
     Detect the active frontmost macOS application.
-    Prioritizes ultra-fast in-process NSWorkspace (<1ms) and Quartz window layer inspection,
-    with graceful fallback to System Events AppleScript if needed.
+    Prioritizes direct Quartz WindowServer inspection (live z-order, zero runloop caching)
+    with graceful fallback to NSWorkspace (with runloop flush) and System Events.
     """
     bid = ""
     raw_name = ""
 
-    # Priority 1: In-process NSWorkspace query (~0.7ms, zero subprocess overhead)
+    # Known system overlays and helper processes to ignore
+    SYSTEM_IGNORE = {
+        "window server", "dock", "spotlight", "windowmanager",
+        "systemuiserver", "control center", "notification center",
+        "screencapturekit", "universalaccessd", "autofill"
+    }
+    SCRIBER_PIDS = {os.getpid(), os.getppid()}
+
+    # Priority 1: Direct Quartz Window Server inspection (always live, zero cache)
+    # Inspects on-screen windows in true z-order (<0.7ms, talks directly to WindowServer)
     try:
-        app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        if app:
-            bid = (app.bundleIdentifier() or "").strip()
-            raw_name = (app.localizedName() or "").strip()
+        windows = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+            Quartz.kCGNullWindowID,
+        )
+        for w in windows:
+            layer = w.get("kCGWindowLayer", 0)
+            pid = w.get("kCGWindowOwnerPID", 0)
+            owner = (w.get("kCGWindowOwnerName", "") or "").strip()
+            owner_l = owner.lower()
+
+            # Normal application windows are layer 0
+            if layer != 0:
+                continue
+
+            # Skip Scriber processes & system overlays
+            if pid in SCRIBER_PIDS or owner_l in SYSTEM_IGNORE or owner_l in {"electron", "scriber"}:
+                continue
+
+            app = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+            if app:
+                app_bid = (app.bundleIdentifier() or "").strip()
+                # Skip if the bundle ID indicates Scriber/Electron helper
+                if app_bid in {"com.github.Electron", "com.scriber.app"}:
+                    continue
+                bid = app_bid
+                raw_name = (app.localizedName() or owner).strip()
+                if bid or raw_name:
+                    break
+            elif owner:
+                raw_name = owner
+                break
     except Exception:
         pass
 
-    # If the front process is Scriber itself, look behind it to find the real target app
-    if bid in {"com.github.Electron", "com.scriber.app", "Scriber"}:
+    # Priority 2: In-process NSWorkspace query with runloop flush fallback
+    if not bid and not raw_name:
         try:
-            windows = Quartz.CGWindowListCopyWindowInfo(
-                Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
-                Quartz.kCGNullWindowID,
-            )
-            for w in windows:
-                layer = w.get("kCGWindowLayer", 0)
-                owner = (w.get("kCGWindowOwnerName", "") or "").strip()
-                owner_l = owner.lower()
-                if layer == 0 and owner and owner_l not in {
-                    "electron", "scriber", "window server", "dock", "spotlight", "windowmanager"
-                }:
-                    raw_name = owner
-                    bid = ""
-                    break
+            # Briefly pump the Cocoa runloop to process pending WindowServer notifications
+            NSRunLoop.currentRunLoop().runUntilDate_(NSDate.dateWithTimeIntervalSinceNow_(0.001))
+            app = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if app:
+                bid = (app.bundleIdentifier() or "").strip()
+                raw_name = (app.localizedName() or "").strip()
         except Exception:
             pass
 
-    # Priority 2: Fallback to System Events only if NSWorkspace was unable to resolve
+    # Priority 3: Fallback to System Events
     if not bid and not raw_name:
         try:
             cmd = 'tell application "System Events" to return (bundle identifier of first application process whose frontmost is true) & "|||" & (name of first application process whose frontmost is true)'
