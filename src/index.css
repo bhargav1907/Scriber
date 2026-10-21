@@ -73,16 +73,17 @@ html, body {
   user-select: none;
 }
 
-/* ── Draggable Title Bar Area ─────────────────────────────────────── */
+/* ── Interactive Header Elements (Strict No-Drag) ─────────────────── */
 
-.titlebar {
-  height: 48px;
-  -webkit-app-region: drag;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
+.header-left,
+.nav-segment,
+.nav-segment-btn,
+.header-actions,
+.mode-pill-container,
+.mode-select-pill,
+.btn-icon {
+  -webkit-app-region: no-drag !important;
+  pointer-events: auto !important;
 }
 
 /* ── Main App Container ───────────────────────────────────────────── */
