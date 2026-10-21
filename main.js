@@ -209,8 +209,9 @@ function showWidget() {
     widgetWindow.setPosition(targetX, targetY, false);
     widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     widgetWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-    widgetWindow.showInactive();
-    widgetWindow.moveTop();
+    if (!widgetWindow.isVisible()) {
+      widgetWindow.showInactive();
+    }
   } catch (err) {
     console.error('[Scriber] Failed to show widget:', err);
   }

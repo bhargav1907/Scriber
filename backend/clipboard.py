@@ -35,11 +35,11 @@ def _restore_clipboard_string(prev_text: str):
         print(f"[Scriber] Could not restore clipboard: {e}")
 
 
-def paste_text(text: str, restore_previous: bool = True, restore_delay: float = 0.45) -> bool:
+def paste_text(text: str, restore_previous: bool = False, restore_delay: float = 2.0) -> bool:
     """
     Copy text to clipboard, then simulate Cmd+V in the frontmost application.
-    If restore_previous is True, restores previous clipboard content after restore_delay seconds.
-    Returns True on success.
+    By default, keeps transcribed text on clipboard so user never loses their dictated content
+    and target apps have ample time to read the pasteboard without race conditions.
     """
     if not text:
         return False
@@ -51,7 +51,7 @@ def paste_text(text: str, restore_previous: bool = True, restore_delay: float = 
         try:
             pb = AppKit.NSPasteboard.generalPasteboard()
 
-            # Save previous clipboard string to prevent accidental data destruction
+            # Save previous clipboard string only if restore is explicitly requested
             if restore_previous:
                 try:
                     prev_text = pb.stringForType_(AppKit.NSPasteboardTypeString)
@@ -62,22 +62,25 @@ def paste_text(text: str, restore_previous: bool = True, restore_delay: float = 
             pb.clearContents()
             pb.setString_forType_(text, AppKit.NSPasteboardTypeString)
 
-            # Small 20ms pause for macOS pasteboard change notification to propagate
-            time.sleep(0.02)
+            # 50ms pause for macOS pasteboard change notification to propagate across processes
+            time.sleep(0.05)
 
-            # Post native Cmd+V keyboard events directly to HID tap
+            # Post native Cmd+V keyboard events to both session and HID taps
             # Virtual keycode 9 is 'v' on standard macOS keyboards
             event_down = Quartz.CGEventCreateKeyboardEvent(None, 9, True)
             Quartz.CGEventSetFlags(event_down, Quartz.kCGEventFlagMaskCommand)
+            Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, event_down)
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_down)
 
-            time.sleep(0.01)
+            # 40ms hold time ensures target application event loops (Electron, Chrome, etc.) register the keypress
+            time.sleep(0.04)
 
             event_up = Quartz.CGEventCreateKeyboardEvent(None, 9, False)
-            Quartz.CGEventSetFlags(event_up, Quartz.kCGEventFlagMaskCommand)
+            Quartz.CGEventSetFlags(event_up, 0)
+            Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, event_up)
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, event_up)
 
-            # Background thread restores previous clipboard so user's copied item isn't lost
+            # Background thread restores previous clipboard only if requested
             if restore_previous and prev_text is not None and prev_text != text:
                 timer = threading.Timer(restore_delay, _restore_clipboard_string, args=[prev_text])
                 timer.daemon = True
