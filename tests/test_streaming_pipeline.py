@@ -30,10 +30,17 @@ class TestStreamingPipeline(unittest.TestCase):
         st = StreamingTranscriber(
             transcriber=MockTranscriber("Thank you."),
             cleaner=MockCleaner(),
+            custom_vocabulary=["Claude", "Antigravity", "Scriber"],
         )
         self.assertTrue(st._is_silence_or_hallucination("Thank you."))
         self.assertTrue(st._is_silence_or_hallucination("[music]"))
+        self.assertTrue(st._is_silence_or_hallucination("!"))
+        self.assertTrue(st._is_silence_or_hallucination("..."))
+        self.assertTrue(st._is_silence_or_hallucination("?"))
+        self.assertTrue(st._is_silence_or_hallucination("Vocabulary,"))
+        self.assertTrue(st._is_silence_or_hallucination("Vocabulary: Claude, Antigravity, Scriber."))
         self.assertFalse(st._is_silence_or_hallucination("Testing the dictation pipeline"))
+        self.assertFalse(st._is_silence_or_hallucination("This is amazing!"))
 
     def test_finalize_execution_success(self):
         st = StreamingTranscriber(

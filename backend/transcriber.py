@@ -183,7 +183,7 @@ class Transcriber:
                 frame_rms = np.sqrt(np.mean(frames ** 2, axis=1))
                 active_speech_frames = int(np.sum(frame_rms > 0.007))
                 active_ratio = active_speech_frames / num_frames
-                if active_speech_frames < 4 or (num_frames > 40 and active_ratio < 0.015):
+                if active_speech_frames < 6 or (num_frames > 20 and active_ratio < 0.06):
                     print(f"[Scriber] 🔇 Insufficient sustained voice activity (active_frames={active_speech_frames}, ratio={active_ratio:.3f}), skipping.")
                     return ""
 
@@ -208,17 +208,27 @@ class Transcriber:
                     # Strip any accidental prompt prefix echo
                     if raw.lower().startswith("vocabulary:"):
                         raw = raw[11:].strip()
+                    elif raw.lower().startswith("vocabulary,"):
+                        raw = raw[11:].strip()
+
+                    # Reject if output contains no alphanumeric characters (e.g. "!", "...", ".", "?", etc.)
+                    if not re.search(r"[a-zA-Z0-9]", raw):
+                        if raw:
+                            print(f"[Scriber] ⚠️ Discarded non-speech punctuation artifact: '{raw}'")
+                        return ""
 
                     # Filter out silence hallucinations (e.g. "Thank you.", "Scream!", "Thanks for watching!")
                     norm_raw = raw.lower().strip(" .,!?:;\t\n\r")
-                    if norm_raw in SILENCE_HALLUCINATIONS or raw.lower().strip() in SILENCE_HALLUCINATIONS:
+                    if not norm_raw or norm_raw in SILENCE_HALLUCINATIONS or raw.lower().strip() in SILENCE_HALLUCINATIONS:
                         print(f"[Scriber] ⚠️ Discarded silence hallucination: '{raw}'")
                         return ""
 
                     # Strip any repetitive hallucination loops (e.g. "word, word, word...")
                     cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE).strip()
+                    if not re.search(r"[a-zA-Z0-9]", cleaned):
+                        return ""
                     norm_cleaned = cleaned.lower().strip(" .,!?:;\t\n\r")
-                    if norm_cleaned in SILENCE_HALLUCINATIONS or cleaned.lower().strip() in SILENCE_HALLUCINATIONS:
+                    if not norm_cleaned or norm_cleaned in SILENCE_HALLUCINATIONS or cleaned.lower().strip() in SILENCE_HALLUCINATIONS:
                         print(f"[Scriber] ⚠️ Discarded silence hallucination: '{cleaned}'")
                         return ""
 
@@ -246,10 +256,18 @@ class Transcriber:
                 raw = " ".join(seg.text.strip() for seg in segments).strip()
                 if raw.lower().startswith("vocabulary:"):
                     raw = raw[11:].strip()
-                if raw.lower() in SILENCE_HALLUCINATIONS:
+                elif raw.lower().startswith("vocabulary,"):
+                    raw = raw[11:].strip()
+                if not re.search(r"[a-zA-Z0-9]", raw):
+                    return ""
+                norm_raw = raw.lower().strip(" .,!?:;\t\n\r")
+                if not norm_raw or norm_raw in SILENCE_HALLUCINATIONS or raw.lower().strip() in SILENCE_HALLUCINATIONS:
                     return ""
                 cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE).strip()
-                if cleaned.lower() in SILENCE_HALLUCINATIONS:
+                if not re.search(r"[a-zA-Z0-9]", cleaned):
+                    return ""
+                norm_cleaned = cleaned.lower().strip(" .,!?:;\t\n\r")
+                if not norm_cleaned or norm_cleaned in SILENCE_HALLUCINATIONS or cleaned.lower().strip() in SILENCE_HALLUCINATIONS:
                     return ""
                 return cleaned
 
