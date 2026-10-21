@@ -41,7 +41,7 @@ def paste_text(text: str, restore_previous: bool = False, restore_delay: float =
     By default, keeps transcribed text on clipboard so user never loses their dictated content
     and target apps have ample time to read the pasteboard without race conditions.
     """
-    if not text:
+    if not text or not text.strip():
         return False
 
     prev_text = None
