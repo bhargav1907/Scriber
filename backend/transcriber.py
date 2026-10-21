@@ -42,6 +42,15 @@ SILENCE_HALLUCINATIONS = {
     "(music)", "(applause)", "(silence)", "[blank_audio]", "thank you for watching.",
     "thank you for watching", "so, thank you.", "so, thank you", "thank you so much.",
     "thank you so much", "thanks for listening.", "thanks for listening!",
+    # Sound effect and reaction hallucinations
+    "scream!", "scream", "screaming", "screams", "[scream]", "[screaming]",
+    "gasp", "gasps", "[gasp]", "sigh", "sighs", "[sigh]",
+    "groan", "groans", "yawn", "cough", "coughs", "[cough]",
+    "laughter", "laughing", "[laughter]", "chuckle", "applause",
+    "[applause]", "cheering", "[cheering]", "music",
+    # Subtitle artifact hallucinations
+    "subtitles by", "subtitles", "subtitles by the amara.org community",
+    "translated by", "closed captioning",
 }
 
 
@@ -161,9 +170,22 @@ class Transcriber:
             # Energy gate: check if audio is near-silence / ambient floor
             max_amp = float(np.max(np.abs(audio_np)))
             rms = float(np.sqrt(np.mean(audio_np ** 2)))
-            if max_amp < 0.015 or rms < 0.003:
+            if max_amp < 0.015 or rms < 0.0035:
                 print(f"[Scriber] 🔇 Audio signal below voice threshold (max_amp={max_amp:.4f}, rms={rms:.4f}), skipping.")
                 return ""
+
+            # Frame-based Voice Activity Detection (50ms frames = 800 samples at 16kHz)
+            # Rejects long ambient recordings that only contain isolated mouse clicks or room rustle
+            frame_len = 800
+            num_frames = len(audio_np) // frame_len
+            if num_frames > 0:
+                frames = audio_np[:num_frames * frame_len].reshape(num_frames, frame_len)
+                frame_rms = np.sqrt(np.mean(frames ** 2, axis=1))
+                active_speech_frames = int(np.sum(frame_rms > 0.007))
+                active_ratio = active_speech_frames / num_frames
+                if active_speech_frames < 4 or (num_frames > 40 and active_ratio < 0.015):
+                    print(f"[Scriber] 🔇 Insufficient sustained voice activity (active_frames={active_speech_frames}, ratio={active_ratio:.3f}), skipping.")
+                    return ""
 
             initial_prompt = self._build_initial_prompt(custom_vocabulary)
 
@@ -187,14 +209,16 @@ class Transcriber:
                     if raw.lower().startswith("vocabulary:"):
                         raw = raw[11:].strip()
 
-                    # Filter out silence hallucinations (e.g. "Thank you.", "Thanks for watching!")
-                    if raw.lower().strip() in SILENCE_HALLUCINATIONS:
+                    # Filter out silence hallucinations (e.g. "Thank you.", "Scream!", "Thanks for watching!")
+                    norm_raw = raw.lower().strip(" .,!?:;\t\n\r")
+                    if norm_raw in SILENCE_HALLUCINATIONS or raw.lower().strip() in SILENCE_HALLUCINATIONS:
                         print(f"[Scriber] ⚠️ Discarded silence hallucination: '{raw}'")
                         return ""
 
                     # Strip any repetitive hallucination loops (e.g. "word, word, word...")
                     cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE).strip()
-                    if cleaned.lower() in SILENCE_HALLUCINATIONS:
+                    norm_cleaned = cleaned.lower().strip(" .,!?:;\t\n\r")
+                    if norm_cleaned in SILENCE_HALLUCINATIONS or cleaned.lower().strip() in SILENCE_HALLUCINATIONS:
                         print(f"[Scriber] ⚠️ Discarded silence hallucination: '{cleaned}'")
                         return ""
 
