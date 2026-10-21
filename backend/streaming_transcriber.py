@@ -11,24 +11,11 @@ import numpy as np
 
 try:
     from backend.clipboard import paste_text
+    from backend.transcriber import is_hallucination
 except ImportError:
     from clipboard import paste_text
+    from transcriber import is_hallucination
 
-
-SILENCE_PHRASES = {
-    "thank you.", "thank you", "thanks for watching.", "thanks for watching!",
-    "thank you very much.", "thank you very much", "thanks.", "thanks",
-    "you", "bye.", "bye", "goodbye.", "goodbye",
-    "please subscribe.", "subscribe", "[music]", "[applause]", "[silence]",
-    "(music)", "(applause)", "(silence)", "[blank_audio]", "thank you for watching.",
-    "thank you for watching", "so, thank you.", "so, thank you", "thank you so much.",
-    "thank you so much", "thanks for listening.", "thanks for listening!",
-    # Sound effects and reactions
-    "scream!", "scream", "screaming", "[scream]", "gasp", "sigh",
-    "applause", "[applause]", "laughter", "[laughter]", "music",
-    # Prompt prefix echoes
-    "vocabulary", "vocabulary.", "vocabulary,", "vocabulary:",
-}
 
 
 class StreamingTranscriber:
@@ -57,33 +44,7 @@ class StreamingTranscriber:
 
     def _is_silence_or_hallucination(self, text: str) -> bool:
         """Filter out Whisper silence phantom outputs, non-speech punctuation, and prompt echoing hallucinations."""
-        if not text or not text.strip():
-            return True
-
-        stripped = text.strip()
-
-        # Reject if text contains zero alphanumeric characters (e.g. "!", "...", ".", "?", etc.)
-        if not re.search(r"[a-zA-Z0-9]", stripped):
-            return True
-
-        lowered = stripped.lower()
-        norm = lowered.strip(" .,!?:;\t\n\r")
-
-        # Check silence phrase matches
-        if lowered in SILENCE_PHRASES or norm in SILENCE_PHRASES:
-            return True
-
-        # Check prompt echoing hallucination
-        if self.custom_vocabulary:
-            words = [w.strip().lower() for w in re.split(r'[,.\s:;]+', stripped) if w.strip()]
-            vocab_set = {w.strip().lower() for v in self.custom_vocabulary for w in v.split()} | {"vocabulary"}
-            # Reject if only the word "vocabulary" or prompt prefix was echoed
-            if words == ["vocabulary"]:
-                return True
-            if words and all(w in vocab_set for w in words) and len(set(words)) >= max(2, len(vocab_set) * 0.5):
-                return True
-
-        return False
+        return is_hallucination(text, self.custom_vocabulary)
 
     async def finalize(self, full_audio_np: np.ndarray | None, auto_paste: bool = True) -> dict:
         """

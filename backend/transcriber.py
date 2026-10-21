@@ -33,25 +33,56 @@ MLX_MODEL_MAP = {
     "tiny": "mlx-community/whisper-tiny",
 }
 
-# Known Whisper hallucinations triggered by silence, breath, or background noise
-SILENCE_HALLUCINATIONS = {
-    "thank you.", "thank you", "thanks for watching.", "thanks for watching!",
-    "thank you very much.", "thank you very much", "thanks.", "thanks",
-    "you", "bye.", "bye", "goodbye.", "goodbye",
-    "please subscribe.", "subscribe", "[music]", "[applause]", "[silence]",
-    "(music)", "(applause)", "(silence)", "[blank_audio]", "thank you for watching.",
-    "thank you for watching", "so, thank you.", "so, thank you", "thank you so much.",
-    "thank you so much", "thanks for listening.", "thanks for listening!",
-    # Sound effect and reaction hallucinations
-    "scream!", "scream", "screaming", "screams", "[scream]", "[screaming]",
-    "gasp", "gasps", "[gasp]", "sigh", "sighs", "[sigh]",
-    "groan", "groans", "yawn", "cough", "coughs", "[cough]",
-    "laughter", "laughing", "[laughter]", "chuckle", "applause",
-    "[applause]", "cheering", "[cheering]", "music",
-    # Subtitle artifact hallucinations
-    "subtitles by", "subtitles", "subtitles by the amara.org community",
-    "translated by", "closed captioning",
-}
+# Comprehensive compiled regex patterns targeting Whisper silence/noise hallucinations
+# (closed caption credits, YouTube outros, subtitle scrapers, sound effect tags, web domains)
+HALLUCINATION_PATTERNS = [
+    # Subtitle / Closed Captioning / Transcriber credits
+    re.compile(r"(?i)\b(closed\s+caption(s|ing)?|subtitles?|captions?|transcrib(ed|ing|er)?)\b"),
+    # Isolated web domains (e.g. Brandhagen.com, amara.org)
+    re.compile(r"(?i)^\s*([a-zA-Z0-9_-]+\s+){0,2}[a-zA-Z0-9_-]+\.(com|org|net|io|tv|cc|fm|gg)\s*[.!]?\s*$"),
+    # Outros & YouTube artifact phrases
+    re.compile(r"(?i)\b(thank\s+you\s+for\s+watching|thanks\s+for\s+watching|thank\s+you\s+for\s+listening|thanks\s+for\s+listening|please\s+subscribe|like\s+and\s+subscribe|see\s+you\s+(in\s+the\s+)?next\s+(video|time)|all\s+rights\s+reserved|copyright)\b"),
+    # Isolated gratitude or greetings when they make up the whole phrase
+    re.compile(r"(?i)^\s*(thank\s+you(\s+(very|so)\s+much)?|thanks|you|bye|goodbye|welcome)\s*[.!]?\s*$"),
+    # Reaction / Sound effect hallucinations
+    re.compile(r"(?i)^\s*(\[|\()? *(music|applause|silence|blank_audio|laughter|cheering|scream|screaming|gasp|sigh|cough|groan|yawn) *(\]|\))? *[!.]?\s*$"),
+    re.compile(r"(?i)^\s*(scream|screaming|gasp|sigh|laughter|laughing|chuckle|applause|music)\s*[!.]?\s*$"),
+    # Isolated prompt prefix / vocabulary echo
+    re.compile(r"(?i)^\s*vocabulary\s*[:.,]?\s*$"),
+]
+
+
+def is_hallucination(text: str, custom_vocabulary: list[str] | None = None) -> bool:
+    """
+    Multi-layer defense against Whisper hallucinations during silence, noise, or pauses:
+    1. Rejects empty or purely non-alphanumeric punctuation output.
+    2. Matches closed-caption credits, URLs, YouTube outros, and sound effect artifacts via regex.
+    3. Detects prompt prefix echoes.
+    """
+    if not text or not text.strip():
+        return True
+
+    stripped = text.strip()
+
+    # Reject non-alphanumeric punctuation (e.g. "!", "...", ".", "?", etc.)
+    if not re.search(r"[a-zA-Z0-9]", stripped):
+        return True
+
+    # Check compiled regex patterns
+    for p in HALLUCINATION_PATTERNS:
+        if p.search(stripped):
+            return True
+
+    # Check custom vocabulary prompt echoing
+    if custom_vocabulary:
+        words = [w.strip().lower() for w in re.split(r'[,.\s:;]+', stripped) if w.strip()]
+        vocab_set = {w.strip().lower() for v in custom_vocabulary for w in v.split()} | {"vocabulary"}
+        if words == ["vocabulary"]:
+            return True
+        if words and all(w in vocab_set for w in words) and len(set(words)) >= max(2, len(vocab_set) * 0.5):
+            return True
+
+    return False
 
 
 class Transcriber:
@@ -201,6 +232,8 @@ class Transcriber:
                         condition_on_previous_text=False,
                         initial_prompt=initial_prompt,
                         word_timestamps=False,
+                        no_speech_threshold=0.45,
+                        compression_ratio_threshold=2.2,
                         fp16=True,
                     )
                     raw = res.get("text", "").strip()
@@ -211,25 +244,17 @@ class Transcriber:
                     elif raw.lower().startswith("vocabulary,"):
                         raw = raw[11:].strip()
 
-                    # Reject if output contains no alphanumeric characters (e.g. "!", "...", ".", "?", etc.)
-                    if not re.search(r"[a-zA-Z0-9]", raw):
+                    # Comprehensive anti-hallucination check
+                    if is_hallucination(raw, custom_vocabulary):
                         if raw:
-                            print(f"[Scriber] ⚠️ Discarded non-speech punctuation artifact: '{raw}'")
-                        return ""
-
-                    # Filter out silence hallucinations (e.g. "Thank you.", "Scream!", "Thanks for watching!")
-                    norm_raw = raw.lower().strip(" .,!?:;\t\n\r")
-                    if not norm_raw or norm_raw in SILENCE_HALLUCINATIONS or raw.lower().strip() in SILENCE_HALLUCINATIONS:
-                        print(f"[Scriber] ⚠️ Discarded silence hallucination: '{raw}'")
+                            print(f"[Scriber] ⚠️ Discarded silence/noise hallucination: '{raw}'")
                         return ""
 
                     # Strip any repetitive hallucination loops (e.g. "word, word, word...")
                     cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE).strip()
-                    if not re.search(r"[a-zA-Z0-9]", cleaned):
-                        return ""
-                    norm_cleaned = cleaned.lower().strip(" .,!?:;\t\n\r")
-                    if not norm_cleaned or norm_cleaned in SILENCE_HALLUCINATIONS or cleaned.lower().strip() in SILENCE_HALLUCINATIONS:
-                        print(f"[Scriber] ⚠️ Discarded silence hallucination: '{cleaned}'")
+                    if is_hallucination(cleaned, custom_vocabulary):
+                        if cleaned:
+                            print(f"[Scriber] ⚠️ Discarded silence/noise hallucination: '{cleaned}'")
                         return ""
 
                     return cleaned
@@ -258,16 +283,10 @@ class Transcriber:
                     raw = raw[11:].strip()
                 elif raw.lower().startswith("vocabulary,"):
                     raw = raw[11:].strip()
-                if not re.search(r"[a-zA-Z0-9]", raw):
-                    return ""
-                norm_raw = raw.lower().strip(" .,!?:;\t\n\r")
-                if not norm_raw or norm_raw in SILENCE_HALLUCINATIONS or raw.lower().strip() in SILENCE_HALLUCINATIONS:
+                if is_hallucination(raw, custom_vocabulary):
                     return ""
                 cleaned = re.sub(r"(\b\w+\b)(?:[,\s]+\1\b){2,}", r"\1", raw, flags=re.IGNORECASE).strip()
-                if not re.search(r"[a-zA-Z0-9]", cleaned):
-                    return ""
-                norm_cleaned = cleaned.lower().strip(" .,!?:;\t\n\r")
-                if not norm_cleaned or norm_cleaned in SILENCE_HALLUCINATIONS or cleaned.lower().strip() in SILENCE_HALLUCINATIONS:
+                if is_hallucination(cleaned, custom_vocabulary):
                     return ""
                 return cleaned
 

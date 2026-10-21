@@ -103,6 +103,7 @@
 
 ### `backend/transcriber.py`
   > Scriber — Whisper Transcription Engine
+  - `def is_hallucination(text, custom_vocabulary)`
   - **class `Transcriber`**
     - `def __init__(self, model_size)`
     - `def is_ready(self)`
