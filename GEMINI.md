@@ -11,3 +11,4 @@ Refer to [`AGENTS.md`](./AGENTS.md) for full architectural guidelines, navigatio
 6. **Attentional Anchoring & Question-First**: Resolve the user's immediate question or visual artifact first before executing any secondary work. Never initiate unasked refactorings.
 7. **Targeted Scope Slicing**: Files > 150 lines MUST use `StartLine`/`EndLine` around target functions found in `REPO_MAP.md`. No blind full-file dumps.
 8. **Quiet Test Invariant**: Run tests in quiet mode (`-q`) targeting specific methods to prevent stdout context bloat.
+9. **Live Token-Counter Pill Invariant**: Conclude EVERY assistant message with a sleek live token-counter pill badge at the very bottom (e.g., `> ⚡ **420 tokens** | **~0.3s**`), detailing the estimated tokens burned and response latency for transparency.
