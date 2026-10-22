@@ -33,9 +33,11 @@ except ImportError:
 MLX_MODEL_MAP = {
     "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
     "large-v3": "mlx-community/whisper-large-v3-turbo",
-    "base": "mlx-community/whisper-base",
-    "small": "mlx-community/whisper-small",
+    "distil-large-v3": "mlx-community/distil-whisper-large-v3",
+    "whisper-distil-large-v3": "mlx-community/distil-whisper-large-v3",
     "medium": "mlx-community/whisper-medium",
+    "small": "mlx-community/whisper-small",
+    "base": "mlx-community/whisper-base",
     "tiny": "mlx-community/whisper-tiny",
 }
 

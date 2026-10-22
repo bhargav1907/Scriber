@@ -20,7 +20,8 @@
    - **Whitespace Guard**: `paste_text` strips whitespace and immediately rejects empty/blank strings without touching pasteboard.
 2. **Focus Management ([`main.js`](file:///Users/bhargavsinguluri/Documents/Scriber/main.js))**:
    - Removed `widgetWindow.moveTop()` from widget state updates to prevent WindowServer from blurring active target windows during paste.
-3. **Alternative Speech Engine Option ([`backend/transcriber.py`](file:///Users/bhargavsinguluri/Documents/Scriber/backend/transcriber.py))**:
+3. **Alternative Speech Engine Options ([`backend/transcriber.py`](file:///Users/bhargavsinguluri/Documents/Scriber/backend/transcriber.py))**:
+   - Added `distil-large-v3` (`mlx-community/distil-whisper-large-v3`, ~500MB, ~0.2s) as balanced Metal GPU option.
    - Integrated Cactus Whistle (`whistle.cact`, 16.9 MB) as an selectable lightweight CPU engine profile alongside default Apple Silicon MLX Large-v3-Turbo.
 4. **Automated Testing Suite ([`tests/test_clipboard.py`](file:///Users/bhargavsinguluri/Documents/Scriber/tests/test_clipboard.py))**:
    - Tests real macOS `NSPasteboard` read/write directly via AppKit.
