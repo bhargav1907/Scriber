@@ -12,3 +12,4 @@ Refer to [`AGENTS.md`](./AGENTS.md) for full architectural guidelines, navigatio
 7. **Targeted Scope Slicing**: Files > 150 lines MUST use `StartLine`/`EndLine` around target functions found in `REPO_MAP.md`. No blind full-file dumps.
 8. **Quiet Test Invariant**: Run tests in quiet mode (`-q`) targeting specific methods to prevent stdout context bloat.
 9. **Token Breakdown Invariant**: Conclude EVERY assistant message with a clean token summary at the very bottom (e.g., `> 📊 **Input Tokens:** ~15.5k | **Output Tokens:** ~380`), reporting the turn's prompt context tokens and generated output tokens. No timing or timestamps.
+10. **Active Working Context Ledger**: Consult [`ACTIVE_CONTEXT.md`](./ACTIVE_CONTEXT.md) for active task state, invariants, and recent decisions instead of crawling past conversational transcripts. Keep it updated with new technical invariants.

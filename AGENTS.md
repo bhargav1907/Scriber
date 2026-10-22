@@ -108,3 +108,15 @@ To prevent context bloat, goal drift, and accidental multi-minute detours:
 6. **Token Breakdown Invariant**:
    - Conclude EVERY assistant response with a dedicated token summary at the very bottom (e.g., `> 📊 **Input Tokens:** ~15.5k | **Output Tokens:** ~380`) detailing input prompt context and generated output tokens without timing or timestamps.
 
+---
+
+## 🧠 7. Active Working Context Protocol (`ACTIVE_CONTEXT.md`)
+
+To eliminate conversational token bloat and prevent lost nuance across long sessions:
+1. **Single Source of Active State**:
+   - [`ACTIVE_CONTEXT.md`](file:///Users/bhargavsinguluri/Documents/Scriber/ACTIVE_CONTEXT.md) maintains the active goal, hardened technical invariants, and task checklists in ~400 tokens.
+   - When resuming or starting a task, consult `ACTIVE_CONTEXT.md` first rather than ingesting extensive past conversation logs or transcripts.
+2. **Maintenance Obligation**:
+   - Whenever an architectural decision is made, a bug root cause is fixed, or a task phase finishes, update `ACTIVE_CONTEXT.md` with a concise bullet point.
+   - Keep the file bounded (< 100 lines) by purging completed legacy tasks.
+
