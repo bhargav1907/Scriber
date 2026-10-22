@@ -22,6 +22,12 @@ try:
 except ImportError:
     HAS_FASTER_WHISPER = False
 
+try:
+    from needle.agent.whistle import Whistle as CactusWhistle
+    HAS_CACTUS_WHISTLE = True
+except ImportError:
+    HAS_CACTUS_WHISTLE = False
+
 
 # Map friendly model size names to MLX Hugging Face repos
 MLX_MODEL_MAP = {
@@ -109,6 +115,17 @@ class Transcriber:
         self._loading = True
         try:
             with self._lock:
+                # 0. Cactus Whistle (Ultra-lightweight ~16.9MB CPU engine)
+                if self.model_size == "cactus-whistle":
+                    if HAS_CACTUS_WHISTLE:
+                        print("[Scriber] ⚡ Loading Cactus Whistle engine (~16.9 MB) ...")
+                        self.model = CactusWhistle()
+                        self._use_mlx = False
+                        print("[Scriber] ✓ Cactus Whistle engine ready!")
+                        return True
+                    else:
+                        print("[Scriber] Cactus Whistle not installed, falling back to MLX Whisper...")
+
                 # 1. Try Apple Silicon MLX GPU
                 if HAS_MLX and self.model_size in MLX_MODEL_MAP:
                     repo = MLX_MODEL_MAP[self.model_size]
@@ -261,8 +278,20 @@ class Transcriber:
                 except Exception as e:
                     print(f"[Scriber] MLX transcription warning ({e}), falling back to CPU...")
 
-            # 3. faster-whisper CPU fallback
-            if self.model:
+            # 3. Cactus Whistle CPU inference
+            if HAS_CACTUS_WHISTLE and isinstance(self.model, CactusWhistle):
+                try:
+                    res = self.model.transcribe(audio_np)
+                    raw = (res.get("text") or "").strip()
+                    if is_hallucination(raw, custom_vocabulary):
+                        return ""
+                    return raw
+                except Exception as e:
+                    print(f"[Scriber] Cactus Whistle transcription warning ({e})")
+                    return ""
+
+            # 4. faster-whisper CPU fallback
+            if self.model and hasattr(self.model, "transcribe"):
                 segments, _ = self.model.transcribe(
                     audio_np,
                     language="en",
